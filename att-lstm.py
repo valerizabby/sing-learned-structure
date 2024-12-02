@@ -312,7 +312,7 @@ class model_trainer():
       print(cum_loss)
     
       # save generator after each epoch
-      curr_file = f"/exp/shager/music-gen/models/{save_name}-epoch-{str(iter)}-loss-{cum_loss:.5f}.txt"
+      curr_file = f"models/{save_name}-epoch-{str(iter)}-loss-{cum_loss:.5f}.txt"
       # !touch curr_file
       torch.save(self.generator, curr_file)
 
