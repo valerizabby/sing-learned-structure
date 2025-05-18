@@ -1,0 +1,8 @@
+numpy>=1.23.0
+pandas>=1.5.0
+matplotlib>=3.5.0
+pretty_midi>=0.2.9
+mido>=1.2.10
+torch>=2.0.0
+tqdm>=4.64.0
+sparsemax>=0.1.7

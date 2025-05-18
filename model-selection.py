@@ -15,7 +15,7 @@ import sparsemax
 
 device = "cuda:0"
 
-exp_path = #YOUR PATH HERE
+exp_path = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure"
 
 # this is the model
 class music_generator(nn.Module):
