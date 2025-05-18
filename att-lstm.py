@@ -15,7 +15,7 @@ import math
 
 device = "cuda:0"
 
-exp_path = #YOUR PATH HERE
+exp_path = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure"
 print("loading data from", exp_path + "data/mar-1-variable_bin_bounds_train.csv"+"...")
 data = torch.load(exp_path + "data/mar-1-variable_bin_bounds_train.csv")  # truncate rather than padding w/ silence
 
