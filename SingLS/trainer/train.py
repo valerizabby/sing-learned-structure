@@ -1,7 +1,63 @@
+import sys
+
 import torch
+import time
+import torch.nn as nn
+from SingLS.config.config import EXP_PATH
+from SingLS.trainer.data_utils import batch_SSM, topk_batch_sample, make_variable_size_batches, \
+    make_batches, SSM
+
+import logging
+import os
+
 from tqdm import tqdm
 
-from SingLS.data_utils import batch_SSM, topk_batch_sample, custom_loss, make_variable_size_batches, make_batches
+LOG_DIR = os.path.join(EXP_PATH, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    filename=os.path.join(LOG_DIR, "training.log"),
+    filemode="w",
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO
+)
+
+console = logging.StreamHandler(sys.stdout)
+console.setLevel(logging.INFO)
+console.setFormatter(logging.Formatter(
+    "%(asctime)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+))
+
+logging.getLogger().addHandler(console)
+
+
+def custom_loss(output, target):
+    criterion = nn.BCEWithLogitsLoss()
+
+    # основная loss
+    bce_loss = criterion(output.double(), target.double())
+    batch_size = output.size(1)
+    ssm_err = 0
+
+    for i in range(batch_size):
+        SSM1 = SSM(output[:, i, :])
+        SSM2 = SSM(target[:, i, :])
+        diff = (SSM1 - SSM2) ** 2
+        ssm_loss = torch.sum(diff) / (SSM2.size(0) ** 2)
+        ssm_err += ssm_loss
+
+        # логируем первые пары
+        if i == 0:
+            logging.info(f"[Loss Debug] Sample {i}")
+            logging.info(f"SSM1 mean: {SSM1.mean():.4f}, SSM2 mean: {SSM2.mean():.4f}")
+            logging.info(f"SSM loss (sample 0): {ssm_loss:.6f}")
+
+    total_loss = bce_loss + ssm_err
+    logging.info(
+        f"[Loss Debug] BCE loss: {bce_loss.item():.6f}, SSM error: {ssm_err.item():.6f}, Total: {total_loss.item():.6f}")
+
+    return total_loss
 
 
 class ModelTrainer:
@@ -13,59 +69,67 @@ class ModelTrainer:
         self.data = data
         self.data_length = data[0][0].shape[0]  # as long as piece length doesn't vary
 
+        logging.info("Starting training with config:")
+        logging.info(f"  Attention type: {self.generator.attention_type}")
+        logging.info(f"  Hidden size: {self.hidden_size}")
+        logging.info(f"  Data shape: {len(self.data)}")
+        logging.info(f"  Random seed: 2022")
+
     def train_epochs(self, num_epochs=50, full_training=False, variable_size_batches=False, save_name="model"):
-        # trains each epoch
         losslist = []
-        # useful when you want to see the progression of the SSM over time
         piclist = []
 
-        for iter in tqdm(range(0, num_epochs)):
-            # start training the generator
-            self.generator.train()
+        logging.info("Starting training loop")
+        logging.info(f"  Epochs: {num_epochs}")
+        logging.info(f"  Full training: {full_training}")
+        logging.info(f"  Variable size batches: {variable_size_batches}")
+        logging.info(f"  Model attention: {self.generator.attention_type}")
 
-            if variable_size_batches:
-                # use all data, and group batches by piece size
-                batches = make_variable_size_batches(self.data, 1)
-            elif full_training and not variable_size_batches:  # truncating data doesn't work w/ variable size batches currently
-                # use all data
-                batches = make_batches(self.data, self.batch_size, self.data_length)
-            else:
-                # use first 100 pieces
-                # can we overfit on a small dataset? if so, can be a good thing b/c shows the model can learn
-                batches = make_batches(self.data[:100], self.batch_size, self.data_length)
+        try:
+            for epoch in tqdm(range(num_epochs), desc="Epochs", dynamic_ncols=True):
+                self.generator.train()
+                start_time = time.time()
 
-            cum_loss = 0
-            for batch_num in tqdm(range(len(batches))):
-                batch = batches[batch_num]
-                if full_training:
-                    # train on full-length pieces
-                    loss = self.train(batch)
+                if variable_size_batches:
+                    batches = make_variable_size_batches(self.data, 1)
+                elif full_training:
+                    batches = make_batches(self.data, self.batch_size, self.data_length)
                 else:
-                    # train on first 105 beats of each piece
-                    loss = self.train(batch[:, :105, :])  # [batch, beats, 128]
-                cum_loss += loss
-                del batch
-                del loss
-            del batches
+                    batches = make_batches(self.data[:100], self.batch_size, self.data_length)
 
-            # print loss for early stopping
-            print(cum_loss)
+                cum_loss = 0.0
 
-            # save generator after each epoch
-            curr_file = f"models/{save_name}-epoch-{str(iter)}-loss-{cum_loss:.5f}.txt"
-            # !touch curr_file
-            torch.save(self.generator, curr_file)
+                for batch in tqdm(batches, desc=f"Epoch {epoch + 1}", leave=False, dynamic_ncols=True):
+                    if full_training:
+                        loss = self.train(batch)
+                    else:
+                        loss = self.train(batch[:, :105, :])
+                    cum_loss += loss
+                    del batch, loss
 
-            # generate example piece for piclist
-            # snap = self.generate_n_examples(n=1, length=95, starter_notes=10)
+                epoch_loss = cum_loss / len(batches)
+                losslist.append(epoch_loss)
 
-            losslist.append(cum_loss)
-            # piclist.append(snap)
+                elapsed = time.time() - start_time
+                msg = f"Epoch {epoch + 1}/{num_epochs} | Loss: {epoch_loss:.5f} | Time: {elapsed:.2f}s"
+                tqdm.write(msg)
+                logging.info(msg)
 
-            # early stopping:
-            # after each epoch,
-            # run w/ validation
-            # if devset (validation) loss goes up for ~5 epochs in a row, early stopping
+                save_dir = os.path.join("models", "checkpoints")
+                os.makedirs(save_dir, exist_ok=True)
+                filename = f"{save_name}-epoch-{epoch + 1:02d}-loss-{epoch_loss:.5f}.pt"
+                path = os.path.join(save_dir, filename)
+                torch.save(self.generator.state_dict(), path)
+
+                tqdm.write(f"Model checkpoint saved to {path}")
+                logging.info(f"Model checkpoint saved to {path}")
+
+                snap = self.generate_n_examples(n=1, length=95, starter_notes=10)
+                piclist.append(snap)
+
+        except Exception:
+            logging.exception("Training interrupted due to an error:")
+
         return losslist, piclist
 
     # train for one batch
@@ -115,7 +179,18 @@ class ModelTrainer:
             generated = torch.vstack((generated, output.to('cpu')))  # used for loss
 
         # run loss after training on whole length of the pieces in the batches
-        single_loss = custom_loss(generated[starter_notes:, :, :], batch.transpose(0, 1)[starter_notes:, :, :])
+
+        output = generated[starter_notes:, :, :]
+        target = batch.transpose(0, 1)[starter_notes:, :, :]
+
+        # выравниваем по min длине
+        min_len = min(output.shape[0], target.shape[0])
+        output = output[:min_len]
+        target = target[:min_len]
+
+        single_loss = custom_loss(output, target)
+
+        # single_loss = custom_loss(generated[starter_notes:, :, :], batch.transpose(0, 1)[starter_notes:, :, :])
         single_loss.backward()
 
         # update the parameters of the LSTM after running on full batch
