@@ -3,29 +3,33 @@ import torch
 import logging
 import matplotlib.pyplot as plt
 
-from SingLS.config import DEVICE, EXP_PATH
-from SingLS.model import MusicGenerator
-from SingLS.train import ModelTrainer
+from SingLS.config.config import DEVICE, EXP_PATH, AttentionType, num_epochs, hidden_size, lr, output_size
+from SingLS.model.model import MusicGenerator
+from SingLS.trainer.train import ModelTrainer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 if __name__ == '__main__':
     data_path = os.path.join(EXP_PATH, "mar-1-variable_bin_bounds_train.csv")
-    model_save_path = os.path.join(EXP_PATH, "trained", "model_30_epochs.txt")
+    model_save_path = os.path.join(EXP_PATH, "trained_lsa", f"model_{num_epochs}_epochs.txt")
     plot_save_path = os.path.join(EXP_PATH, "plots", "train_loss.png")
 
     logging.info(f"Loading data from {data_path}...")
     data = torch.load(data_path, weights_only=False)
     logging.info("Data loaded successfully.")
 
-    torch.manual_seed(2022)
+    torch.manual_seed(2022 )
 
     logging.info("Initializing model...")
-    generator = MusicGenerator(hidden_size=128, output_size=128, base_lstm=True).to(DEVICE)
-    optimizer = torch.optim.Adam(generator.parameters(), lr=0.001)
 
-    hidden_size = 128
-    num_epochs = 30
+    generator = MusicGenerator(
+        hidden_size=hidden_size,
+        output_size=output_size,
+        attention_type=AttentionType.LSA
+    ).to(DEVICE)
+
+    optimizer = torch.optim.Adam(generator.parameters(), lr=lr)
+
     logging.info(f"Starting training for {num_epochs} epochs...")
 
     trainer = ModelTrainer(generator, optimizer, data, hidden_size)

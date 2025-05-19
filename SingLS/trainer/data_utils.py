@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import random
 import torch.distributions
@@ -14,17 +13,14 @@ def get_chroma(roll, length):
         chroma_matrix[:, note] = torch.sum(roll[:, note::12], axis=1)
     return chroma_matrix
 
-
-# this takes in the sequence and creates a self-similarity matrix (it calls chroma function inside)
 def SSM(sequence):
-    # tensor will be in form length, hidden_size (128)
-    cos = nn.CosineSimilarity(dim=1)
-    chrom = get_chroma(sequence, sequence.size()[0])
-    len = chrom.size()[0]
-    SSM = torch.zeros((len, len))
-    for i in range(0, len):
-        SSM[i] = cos(chrom[i].view(1, -1), chrom)
-    return (SSM)
+    # sequence: [T, 128]
+    chrom = get_chroma(sequence, sequence.size(0))  # [T, 12]
+    chrom = chrom / (chrom.norm(p=2, dim=1, keepdim=True) + 1e-8)  # нормировка
+
+    # [T, 12] @ [12, T] → [T, T]
+    ssm = torch.matmul(chrom, chrom.T)
+    return ssm
 
 
 # this bundles the SSM function.
@@ -118,7 +114,6 @@ def make_variable_size_batches(data, min_batch_size=3, max_batch_size=128):
     return batches
 
 
-# sampling function
 def topk_sample_one(sequence, k):
     # takes in size sequence length, batch size, values
     softmax = sparsemax.Sparsemax(dim=2)
@@ -139,17 +134,3 @@ def topk_batch_sample(sequence, k):
         else:
             sum += new
     return (torch.where(sum > 0, 1, 0))
-
-
-def custom_loss(output, target):
-    # custom loss function
-    criterion = nn.BCEWithLogitsLoss()
-    weighted_mse = criterion(output.double(), target.double())
-    batch_size = output.size()[1]
-    ssm_err = 0
-    for i in range(0, batch_size):
-        SSM1 = SSM(output[:, i, :])
-        SSM2 = SSM(target[:, i, :])
-        ssm_err += (torch.sum((SSM1 - SSM2) ** 2) / (SSM2.size(0) ** 2))
-
-    return torch.sum(weighted_mse) + ssm_err
