@@ -52,11 +52,11 @@ def custom_loss(output, target):
             logging.info(f"[Loss Debug] Sample {i}")
             logging.info(f"SSM1 mean: {SSM1.mean():.4f}, SSM2 mean: {SSM2.mean():.4f}")
             logging.info(f"SSM loss (sample 0): {ssm_loss:.6f}")
-
-    total_loss = bce_loss + ssm_err
+    # балансировка
+    alpha = 0.43632
+    total_loss = bce_loss + alpha * ssm_err
     logging.info(
-        f"[Loss Debug] BCE loss: {bce_loss.item():.6f}, SSM error: {ssm_err.item():.6f}, Total: {total_loss.item():.6f}")
-
+        f"[Loss Debug] BCE loss: {bce_loss.item():.6f}, SSM error: {ssm_err.item():.6f}, SSM * alpha: {(alpha * ssm_err).item():.6f}, Total: {total_loss.item():.6f}")
     return total_loss
 
 

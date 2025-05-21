@@ -23,7 +23,7 @@ class LearnedStructuredAttention(nn.Module):
         V = V.transpose(0, 1)
 
         attn_scores = torch.bmm(Q, K.transpose(1, 2)) / self.scale  # [batch, seq_len, seq_len]
-        masked_scores = attn_scores * ssm  # Element-wise modulation by SSM
+        masked_scores = attn_scores * ssm
         attn_weights = F.softmax(masked_scores, dim=-1)  # [batch, seq_len, seq_len]
         output = torch.bmm(attn_weights, V)  # [batch, seq_len, hidden]
 

@@ -118,7 +118,7 @@ def compare_models(model_path,
     # обрежь до нужной длины
     piano_roll = piano_roll[:_len_]
 
-    os.makedirs("generated", exist_ok=True)
+    os.makedirs("generated_old", exist_ok=True)
     midi = piano_roll_to_midi(piano_roll)
     midi.write("generated/music_sample.mid")
 
