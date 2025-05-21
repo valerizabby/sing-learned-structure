@@ -10,16 +10,16 @@ if __name__ == "__main__":
 
     # Модель 1: ORIGINAL
     metrics_original = compare_models_avg(
-        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/SingLS/models/checkpoints_original_15e/model-epoch-15-loss-16.65498.pt",
+        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/SingLS/models/checkpoints_original_15e_alpha/model-epoch-15-loss-13.71772.pt",
         attention_type_=AttentionType.ORIGINAL,
         data_path_=data_path_,
         _len_=length,
         n = 20
     )
-
     # Модель 2: LSA
     metrics_lsa = compare_models_avg(
-        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/SingLS/models/checkpoints/model-epoch-15-loss-13.02090.pt",
+        # model_path="/SingLS/models/checkpoints_lsa_15e/model-epoch-15-loss-13.02090.pt",
+        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/SingLS/models/checkpoints_lsa_alpha_15e/model-epoch-15-loss-6.11968.pt",
         attention_type_=AttentionType.ORIGINAL,
         data_path_=data_path_,
         _len_=length,

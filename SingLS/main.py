@@ -11,14 +11,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 if __name__ == '__main__':
     data_path = os.path.join(EXP_PATH, "mar-1-variable_bin_bounds_train.csv")
-    model_save_path = os.path.join(EXP_PATH, "trained_lsa", f"model_{num_epochs}_epochs.txt")
+    model_save_path = os.path.join(EXP_PATH, "trained_alpha_lsa", f"model_{num_epochs}_epochs.txt")
     plot_save_path = os.path.join(EXP_PATH, "plots", "train_loss.png")
 
     logging.info(f"Loading data from {data_path}...")
     data = torch.load(data_path, weights_only=False)
     logging.info("Data loaded successfully.")
 
-    torch.manual_seed(2022 )
+    torch.manual_seed(2022)
 
     logging.info("Initializing model...")
 
