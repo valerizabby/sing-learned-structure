@@ -1,3 +1,13 @@
+# TODO
+Подготовить данные для обработки через ноутбук data_processing. Там обработка для датасета маестро, цель добавить еще 1200-1300 песен из другого датасета
+
+- LMD
+- Pop-909
+
+Слить в один датасет, нормализовать как в препроцессинге здесь, выложить в опенсорс
+
+На нормализованном датасете переобучить SING и SINGLS, получить устойчивый результат
+
 # SING
 Similarity Incentivized Neural Generator, or SING, is a music generation system which uses self-similarity as attention.
 
