@@ -3,7 +3,8 @@ from enum import Enum
 import torch
 
 DEVICE = torch.device("cpu")
-EXP_PATH = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data"
+EXP_PATH = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/maestro_processed"
+EXP_PATH_LMD = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/lmd_processed"
 
 
 hidden_size = 128

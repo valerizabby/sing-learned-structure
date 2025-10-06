@@ -12,5 +12,5 @@ Building maestro-like dataset for LMD stored in `build_LMD.py`
 ## Data preparation pipeline
 
 1) Run `build_LMD.py` (change LMD_ROOT, LMD_AUDIO_ROOT);
-2) Run `data_preprocessing.py`;
-3) 
+2) Run `data_preprocessing.py` (change INPUT_PARQUET, OUTPUT_PICKLE);
+3) Run `build_BINS.py` to build train, val and test sets for 
