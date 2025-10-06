@@ -40,6 +40,8 @@ def custom_loss(output, target):
     batch_size = output.size(1)
     ssm_err = 0
 
+    # logging.info(f"[Custom Loss] target shape [{target.shape}], output shape [{output.shape}]")
+
     for i in range(batch_size):
         SSM1 = SSM(output[:, i, :])
         SSM2 = SSM(target[:, i, :])
@@ -133,7 +135,9 @@ class ModelTrainer:
         return losslist, piclist
 
     # train for one batch
-    def train(self, batch, starter_notes=10):
+    # NB вот тут для датасета lmd нельзя брать большой starter_notes (> 10) из за
+    # проблем с подсчетом лосса
+    def train(self, batch, starter_notes=5):
         # seed vectors for the beginning:
         batch_size = batch.shape[0]
         self_sim = batch_SSM(batch.transpose(0, 1), batch_size)  # use variable batch size

@@ -135,10 +135,17 @@ def main():
     for _, row in tqdm(df.iterrows(), total=len(df)):
         midi_path = os.path.join(MIDI_ROOT, row["midi_filename"])
         split = row["split"]
-        result = piano_roll_no_silence(midi_path)
-        if result is None:
-            continue  # skip this piecef
-        roll, tempo, beats = result
+
+        try:
+            roll, tempo, beats = piano_roll_no_silence(midi_path)
+        except Exception as e:
+            print(f"⚠️ Skipping {midi_path} due to error: {e}")
+            continue
+
+        if roll.shape[0] < 2:
+            print(f"⚠️ Skipping {midi_path}: too short after preprocessing (roll.shape={roll.shape})")
+            continue
+
         pieces.append({
             "roll": roll,
             "tempo": tempo,
