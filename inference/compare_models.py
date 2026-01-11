@@ -99,11 +99,10 @@ def evaluate_piano_roll(piano_roll, reference_ssm=None, block_size=4):
 
 
 def compare_models(model_path,
+                   data_path,
                    attention_type_=AttentionType.ORIGINAL,
-                   data_path_="mar-1-variable_bin_bounds_val.csv",
                    _len_=95
                    ):
-    data_path = os.path.join(EXP_PATH, data_path_)
     data = torch.load(data_path, weights_only=False)
 
     model = MusicGenerator(128, 128, attention_type=attention_type_).to(DEVICE)
@@ -169,29 +168,68 @@ def compare_models(model_path,
         print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
 
 
-def compare_models_avg(model_path, attention_type_, data_path_, _len_=95, n=10):
-    data_path = os.path.join(EXP_PATH, data_path_)
+from collections import defaultdict
+import torch
+import numpy as np
+
+from SingLS.config.config import DEVICE, lr, hidden_size
+from SingLS.trainer.train import ModelTrainer
+
+
+def compare_models_avg(
+    model_path: str,
+    data_path: str,
+    _len_: int = 95,
+    n: int = 10,
+):
+    """
+    Универсальный evaluator:
+    - MusicGenerator
+    - HierarchicalGenerator
+    """
+
+    # ---------- data ----------
     data = torch.load(data_path, weights_only=False)
 
-    reference_roll = torch.stack([x for x in data[0][:_len_] if isinstance(x, torch.Tensor)])
-    reference_roll = reference_roll.to(torch.float32).cpu().numpy()
-    if reference_roll.ndim == 3 and reference_roll.shape[0] == 1:
+    reference_roll = torch.stack(
+        [x for x in data[0][:_len_] if isinstance(x, torch.Tensor)]
+    )
+    reference_roll = reference_roll.float().cpu().numpy()
+    if reference_roll.ndim == 3:
         reference_roll = reference_roll.squeeze(0)
     reference_roll = reference_roll[:_len_]
+
+    from inference.compare_models import compute_ssm, evaluate_piano_roll
     reference_ssm = compute_ssm(reference_roll)
 
-    model = MusicGenerator(128, 128, attention_type=attention_type_).to(DEVICE)
-    model.load_state_dict(torch.load(model_path))
+    # ---------- model ----------
+    model = torch.load(model_path, weights_only=False, map_location=DEVICE)
     model.eval()
+
+    # sanity-check (оставь на время отладки)
+    print(f"[INFO] Loaded model type: {type(model)}")
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     trainer = ModelTrainer(model, optimizer, data, hidden_size)
 
+    # ---------- inference ----------
     all_metrics = defaultdict(list)
+
     for _ in range(n):
-        snap = trainer.generate_n_examples(n=1, length=_len_, starter_notes=10)
+        snap = trainer.generate_n_examples(
+            n=1,
+            length=_len_,
+            starter_notes=10
+        )
+
         piano_roll = snap.squeeze(1).detach().cpu().numpy().round()
         piano_roll = piano_roll[:_len_]
-        metrics = evaluate_piano_roll(piano_roll, reference_ssm=reference_ssm)
+
+        metrics = evaluate_piano_roll(
+            piano_roll,
+            reference_ssm=reference_ssm
+        )
+
         for k, v in metrics.items():
             if k != "ssm":
                 all_metrics[k].append(v)

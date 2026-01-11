@@ -1,4 +1,6 @@
-from SingLS.config.config import AttentionType
+import os
+
+from SingLS.config.config import AttentionType, EXP_PATH_LMD, EXP_PATH, EXP_PATH_COMBINED
 from inference.compare_models import compare_models_avg
 
 if __name__ == "__main__":
@@ -6,26 +8,29 @@ if __name__ == "__main__":
     n = 10
 
     # Загрузка данных
-    data_path_ = "mar-1-variable_bin_bounds_val.csv"
+    # COMBINED data
+    data_path_ = os.path.join(EXP_PATH_COMBINED, "combined_test.pt")
 
-    # Модель 1: ORIGINAL
+    # Модель 1: LSA combined data + alpha
     metrics_original = compare_models_avg(
-        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/SingLS/models/checkpoints_original_15e_alpha/model-epoch-15-loss-13.71772.pt",
-        attention_type_=AttentionType.ORIGINAL,
-        data_path_=data_path_,
+        # model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/meta_info/trained_lsa_combined/model_30_epochs.txt",
+        # model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/meta_info/trained_none_combined/model_30_epochs.txt",
+        # model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/meta_info/trained_original_combined/model_30_epochs.txt",
+        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/meta_info/trained_original_combined/model_30_epochs.txt",
+        data_path=data_path_,
         _len_=length,
-        n = 20
+        n = 30
     )
-    # Модель 2: LSA
+    # Модель 2: LSA combined data
     metrics_lsa = compare_models_avg(
-        # model_path="/SingLS/models/checkpoints_lsa_15e/model-epoch-15-loss-13.02090.pt",
-        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/SingLS/models/checkpoints_lsa_alpha_15e/model-epoch-15-loss-6.11968.pt",
-        attention_type_=AttentionType.ORIGINAL,
-        data_path_=data_path_,
+        # model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/meta_info/trained_lsa_combined_NONalpha/model_30_epochs.txt",
+        # model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/meta_info/trained_none_combined_NONalpha/model_30_epochs.txt",
+        model_path="/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/meta_info/trained_transformer_original_combined/model_30_epochs.txt",
+        data_path=data_path_,
         _len_=length,
-        n = 20
+        n = 30
     )
 
     print("\n=== AVERAGED METRICS ===")
     for key in metrics_original.keys():
-        print(f"{key}: ORIGINAL={metrics_original[key]:.4f}, LSA={metrics_lsa[key]:.4f}")
+        print(f"{key}: ORIGINAL={metrics_original[key]:.4f}, TRANSFORMER={metrics_lsa[key]:.4f}")
