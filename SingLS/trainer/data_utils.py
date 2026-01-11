@@ -15,27 +15,44 @@ def get_chroma(roll, length):
 
 def SSM(sequence):
     # sequence: [T, 128]
-    chrom = get_chroma(sequence, sequence.size(0))  # [T, 12]
-    chrom = chrom / (chrom.norm(p=2, dim=1, keepdim=True) + 1e-8)  # нормировка
+    T = sequence.size(0)
 
-    # [T, 12] @ [12, T] → [T, T]
-    ssm = torch.matmul(chrom, chrom.T)
+    chrom = get_chroma(sequence, T)  # [T, 12]
+
+    chrom_norms = chrom.norm(p=2, dim=1, keepdim=True)
+    if not torch.isfinite(chrom_norms).all():
+        print(" chrom_norms contain NaN/Inf")
+
+    chrom = chrom / (chrom_norms + 1e-8)
+
+    ssm = torch.matmul(chrom, chrom.T)  # [T, T]
+
     return ssm
 
 
-# this bundles the SSM function.
 def batch_SSM(seq, batch_size):
-    # takes sequence in format
-    # [beats=400, batch_size, 128]
-    # print("SSM\tsequence_shape", seq.shape)
     SSMs = []
-    for i in range(0, batch_size):
-        # print("SSM\tsequence", seq[:,i,:].shape)
-        ssm = SSM(seq[:, i, :])  # [beats, batch, 128]
-        # print("SSM\tssm", ssm.shape)
-        SSMs.append(ssm)
-    return torch.vstack(SSMs)
+    for i in range(batch_size):
+        seq_i = seq[:, i, :]  # [beats, 128]
 
+        if not torch.isfinite(seq_i).all():
+            print(f"  ⚠️ Skipping sample {i}: input contains NaN or Inf")
+            continue
+        if seq_i.shape[0] < 2:
+            print(f"  ⚠️ Skipping sample {i}: too short sequence ({seq_i.shape[0]} timesteps)")
+            continue
+        if seq_i.sum() == 0:
+            print(f"  ⚠️ Skipping sample {i}: input is all zeros")
+            continue
+
+        ssm = SSM(seq_i)  # [T, T]
+        SSMs.append(ssm)
+
+    if not SSMs:
+        raise ValueError("No valid SSMs generated — all samples were skipped")
+
+    stacked = torch.vstack(SSMs)
+    return stacked
 
 # Takes in the batch size and data and returns batches of the batch size
 def make_batches(data, batch_size, piece_size):

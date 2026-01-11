@@ -21,7 +21,7 @@ def estimate_alpha(bce_losses, ssm_errors):
     return sum(ratios) / len(ratios)
 
 if __name__ == '__main__':
-    log_path = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/logs/training_15_epochs_lca.log"
+    log_path = "/data/meta_info_old/logs/training_15_epochs_lca.log"
     bce, ssm = parse_losses_from_log(log_path)
     alpha_estimate = estimate_alpha(bce, ssm)
 

@@ -3,7 +3,8 @@ import sys
 import torch
 import time
 import torch.nn as nn
-from SingLS.config.config import EXP_PATH
+from SingLS.config.config import EXP_PATH, DEVICE
+from SingLS.model.utils import freeze_structure, unfreeze_structure
 from SingLS.trainer.data_utils import batch_SSM, topk_batch_sample, make_variable_size_batches, \
     make_batches, SSM
 
@@ -36,11 +37,9 @@ def custom_loss(output, target):
     criterion = nn.BCEWithLogitsLoss()
 
     # основная loss
-    bce_loss = criterion(output.double(), target.double())
+    bce_loss = criterion(output, target.float())
     batch_size = output.size(1)
     ssm_err = 0
-
-    # logging.info(f"[Custom Loss] target shape [{target.shape}], output shape [{output.shape}]")
 
     for i in range(batch_size):
         SSM1 = SSM(output[:, i, :])
@@ -54,11 +53,9 @@ def custom_loss(output, target):
             logging.info(f"[Loss Debug] Sample {i}")
             logging.info(f"SSM1 mean: {SSM1.mean():.4f}, SSM2 mean: {SSM2.mean():.4f}")
             logging.info(f"SSM loss (sample 0): {ssm_loss:.6f}")
-    # балансировка
-    alpha = 0.43632
-    total_loss = bce_loss + alpha * ssm_err
+    total_loss = bce_loss + ssm_err
     logging.info(
-        f"[Loss Debug] BCE loss: {bce_loss.item():.6f}, SSM error: {ssm_err.item():.6f}, SSM * alpha: {(alpha * ssm_err).item():.6f}, Total: {total_loss.item():.6f}")
+        f"[Loss Debug] BCE loss: {bce_loss.item():.6f}, SSM error: {ssm_err.item():.6f}, Total: {total_loss.item():.6f}")
     return total_loss
 
 
@@ -70,12 +67,26 @@ class ModelTrainer:
         self.hidden_size = hidden_size  # 128
         self.data = data
         self.data_length = data[0][0].shape[0]  # as long as piece length doesn't vary
+        self.alpha_max = 0.05
+        self.alpha_warmup_epochs = 10
+        self.alpha_history = []
 
         logging.info("Starting training with config:")
         logging.info(f"  Attention type: {self.generator.attention_type}")
         logging.info(f"  Hidden size: {self.hidden_size}")
         logging.info(f"  Data shape: {len(self.data)}")
         logging.info(f"  Random seed: 2022")
+
+    def _update_alpha(self, epoch):
+        """
+        Linear warmup: 0 → alpha_max за alpha_warmup_epochs
+        """
+        if hasattr(self.generator, "alpha"):
+            alpha = min(
+                self.alpha_max,
+                self.alpha_max * epoch / self.alpha_warmup_epochs
+            )
+            self.generator.alpha = alpha
 
     def train_epochs(self, num_epochs=50, full_training=False, variable_size_batches=False, save_name="model"):
         losslist = []
@@ -88,7 +99,20 @@ class ModelTrainer:
         logging.info(f"  Model attention: {self.generator.attention_type}")
 
         try:
+            # --- ФАЗА 1: стабилизация локальной генерации ---
+            freeze_structure(self.generator)
+
             for epoch in tqdm(range(num_epochs), desc="Epochs", dynamic_ncols=True):
+                self._update_alpha(epoch)
+                if hasattr(self.generator, "alpha"):
+                    alpha_value = self.generator.alpha
+                    self.generator.alpha.fill_(alpha_value)
+                    self.alpha_history.append(alpha_value)
+                    logging.info(f"[Alpha] epoch={epoch + 1} alpha={alpha_value:.6f}")
+
+                # --- ФАЗА 1: стабилизация локальной генерации ---
+                if epoch == 5:
+                    unfreeze_structure(self.generator)
                 self.generator.train()
                 start_time = time.time()
 
@@ -121,8 +145,7 @@ class ModelTrainer:
                 os.makedirs(save_dir, exist_ok=True)
                 filename = f"{save_name}-epoch-{epoch + 1:02d}-loss-{epoch_loss:.5f}.pt"
                 path = os.path.join(save_dir, filename)
-                torch.save(self.generator.state_dict(), path)
-
+                torch.save(self.generator, path)
                 tqdm.write(f"Model checkpoint saved to {path}")
                 logging.info(f"Model checkpoint saved to {path}")
 
@@ -133,6 +156,15 @@ class ModelTrainer:
             logging.exception("Training interrupted due to an error:")
 
         return losslist, piclist
+
+    @staticmethod
+    def _get_alpha(model):
+        if hasattr(model, "alpha"):
+            try:
+                return model.alpha.detach().cpu().item()
+            except Exception:
+                pass
+        return None
 
     # train for one batch
     # NB вот тут для датасета lmd нельзя брать большой starter_notes (> 10) из за
@@ -156,7 +188,7 @@ class ModelTrainer:
 
         # first .forward on sequence of num_starter_beats (~5 or 10 or so)
         # then loop from there to generate one more element
-        next_element = sequence.to("cpu")  # make copy!
+        next_element = sequence.to(DEVICE)  # make copy!
 
         # take
         for i in range(0, batch.shape[1] - starter_notes):  # for each beat
@@ -178,9 +210,9 @@ class ModelTrainer:
                 next_element = topk_batch_sample(output, 50)  # sample up to 5 most likely notes at this beat
 
             # add next_element (either generated or teacher) to sequence
-            sequence = torch.vstack((sequence, next_element.to("cpu")))  # .unsqueeze(0)
+            sequence = torch.vstack((sequence, next_element.to(DEVICE)))  # .unsqueeze(0)
             # append output (generated - not teacher forced) for loss
-            generated = torch.vstack((generated, output.to('cpu')))  # used for loss
+            generated = torch.vstack((generated, output.to(DEVICE)))  # used for loss
 
         # run loss after training on whole length of the pieces in the batches
 
@@ -200,7 +232,7 @@ class ModelTrainer:
         # update the parameters of the LSTM after running on full batch
         self.optimizer.step()
 
-        loss += single_loss.detach().to('cpu')
+        loss += single_loss.detach().to(DEVICE)
         del next_element
         del self_sim
         del sequence
@@ -219,7 +251,7 @@ class ModelTrainer:
         # initial vectors in format [batch_size, num_notes=10, 128]
         # change sequence to [10, batch_size, 128]
         sequence = initial_vectors.transpose(0, 1)
-        next_element = sequence.to("cpu")
+        next_element = sequence.to(DEVICE)
 
         # can't generate more notes than the ssm has entries
         max_notes = batched_ssm.shape[0] - sequence.shape[0]
@@ -232,7 +264,7 @@ class ModelTrainer:
                 output, _ = self.generator.forward(next_element.float(), n_pieces, sequence, batched_ssm)
                 next_element = topk_batch_sample(output, 50)  # sample up to 5 most likely notes at this beat
             # add element to sequence
-            sequence = torch.vstack((sequence, next_element.to("cpu")))
+            sequence = torch.vstack((sequence, next_element.to(DEVICE)))
 
         # return sequence of beats
         return sequence
