@@ -28,6 +28,34 @@ mse: ORIGINAL=0.1406, TRANSFORMER=0.1780
 при шедулинге альфа
 iou: ORIGINAL=0.2047, TRANSFORMER=0.1937
 mse: ORIGINAL=0.1484, TRANSFORMER=0.1522
+struct loss в 25% случаев
+IOU: ORIGINAL=0.2190, TRANSFORMER=0.2085
+MSE: ORIGINAL=0.1400, TRANSFORMER=0.1400
+
+
+trained_transformer_original_combined – просто трансформер
+IOU: ORIGINAL=0.2195, TRANSFORMER=0.1972
+MSE: ORIGINAL=0.1376, TRANSFORMER=0.1550
+
+trained_transformer_original_struct_combined - доработка с добавлением учета структуры (шедулинг альфа?)
+IOU: ORIGINAL=0.2189, TRANSFORMER=0.2122
+MSE: ORIGINAL=0.1411, TRANSFORMER=0.1501
+
+trained_transformer_original_struct_stabil_combined - оптимизация со стабилизацией обучения (фиксированный альфа, смотрим только часть структуры на IOU)
+IOU: ORIGINAL=0.2156, TRANSFORMER=0.2110
+MSE: ORIGINAL=0.1427, TRANSFORMER=0.1511
+
+trained_transformer_original_less_struct_combined - beta=0.03, структура не обучаемая а как регуляризация 
+IOU: ORIGINAL=0.2160, TRANSFORMER=0.2751
+MSE: ORIGINAL=0.1418, TRANSFORMER=0.1007
+
+lsa attention
+
+=== AVERAGED METRICS ===
+IOU: ORIGINAL=0.2195, TRANSFORMER=0.1102
+MSE: ORIGINAL=0.1389, TRANSFORMER=0.0581
+
+
 
 
 
