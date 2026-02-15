@@ -7,8 +7,7 @@ class HierarchicalGenerator(nn.Module):
         super().__init__()
         self.generator = generator
         self.structure_model = structure_model
-        self.alpha = 0.0
-        self.register_buffer("alpha", torch.tensor(0.0))
+        self.register_buffer("alpha", torch.tensor(0.05))
 
     def forward(self, in_put, batch_size, prev_sequence, batched_ssm):
         attn_out, hidden, lstm_out = self.generator.forward(

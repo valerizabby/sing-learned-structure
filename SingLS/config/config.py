@@ -12,6 +12,7 @@ hidden_size = 128
 num_epochs = 30
 output_size = 128
 lr = 0.001
+struct_lr = 0.0001
 
 class AttentionType(Enum):
     NONE = "none"

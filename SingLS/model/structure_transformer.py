@@ -34,7 +34,7 @@ class StructureTransformer(nn.Module):
         nhead: int = 4,
         num_layers: int = 2,
         dropout: float = 0.1,
-        max_len: int = 512,
+        max_len: int = 1024,
     ):
         super().__init__()
 

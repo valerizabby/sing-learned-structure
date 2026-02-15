@@ -4,7 +4,7 @@ import logging
 import matplotlib.pyplot as plt
 
 from SingLS.config.config import DEVICE, EXP_PATH, AttentionType, num_epochs, hidden_size, lr, output_size, \
-    EXP_PATH_LMD, EXP_PATH_COMBINED
+    EXP_PATH_LMD, EXP_PATH_COMBINED, struct_lr
 from SingLS.model.hierarchical_generator import HierarchicalGenerator
 from SingLS.model.model import MusicGenerator
 from SingLS.model.structure_transformer import StructureTransformer, StructureModel
@@ -26,7 +26,7 @@ class Model(Enum):
 
 
 if __name__ == '__main__':
-    CURRENT_MODEL = Model.TRANSFORMER_ORIGINAL
+    CURRENT_MODEL = Model.LSA
 
     data_path = os.path.join(EXP_PATH_COMBINED, "combined_train.pt")
     model_save_path = os.path.join(EXP_PATH, f"meta_info/trained_{CURRENT_MODEL.value[1]}_combined", f"model_{num_epochs}_epochs.txt")
@@ -40,33 +40,47 @@ if __name__ == '__main__':
 
     logging.info("Initializing model...")
 
-    # model = MusicGenerator(
-    #     hidden_size=hidden_size,
-    #     output_size=output_size,
-    #     attention_type=CURRENT_MODEL.value[0]
-    # )
-
-    generator = MusicGenerator(
+    model = MusicGenerator(
         hidden_size=hidden_size,
         output_size=output_size,
         attention_type=CURRENT_MODEL.value[0]
     )
 
-    structure_transformer = StructureTransformer(
-        d_model=hidden_size,
-        nhead=4,
-        num_layers=2
-    )
-
-    structure_model = StructureModel(
-        transformer=structure_transformer,
-        proj=torch.nn.Linear(hidden_size, hidden_size)
-    )
-
-    model = HierarchicalGenerator(
-        generator=generator,
-        structure_model=structure_model
-    ).to(DEVICE)
+    # generator = MusicGenerator(
+    #     hidden_size=hidden_size,
+    #     output_size=output_size,
+    #     attention_type=CURRENT_MODEL.value[0]
+    # )
+    #
+    # structure_transformer = StructureTransformer(
+    #     d_model=hidden_size,
+    #     nhead=4,
+    #     num_layers=2
+    # )
+    #
+    # structure_model = StructureModel(
+    #     transformer=structure_transformer,
+    #     proj=torch.nn.Linear(hidden_size, hidden_size)
+    # )
+    #
+    # model = HierarchicalGenerator(
+    #     generator=generator,
+    #     structure_model=structure_model
+    # ).to(DEVICE)
+    #
+    # gen_params = model.generator.parameters()
+    #
+    # struct_params = (
+    #     model.structure_model.parameters()
+    #     if model.structure_model is not None
+    #     else []
+    # )
+    # optimizer = torch.optim.Adam(
+    #     [
+    #         {"params": gen_params, "lr": lr},
+    #         {"params": struct_params, "lr": struct_lr},
+    #     ]
+    # )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
