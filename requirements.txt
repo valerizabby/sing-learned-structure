@@ -7,3 +7,6 @@ torch>=2.0.0
 tqdm>=4.64.0
 sparsemax>=0.1.7
 pyarrow>=13.0.0
+librosa
+yt-dlp
+mirdata

@@ -1,0 +1,10 @@
+checkpoint : checkpoints/seg2ssm_best.pt
+epoch      : 1
+val_loss   : 0.2594
+
+baseline_constant_l1    : 0.288502
+baseline_block_l1       : 0.485104
+model_l1                : 0.269573
+model_mse               : 0.109329
+model_sym               : 0.013338
+model_diag_mean         : 0.982065
