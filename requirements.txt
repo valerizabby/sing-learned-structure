@@ -10,3 +10,6 @@ pyarrow>=13.0.0
 librosa
 yt-dlp
 mirdata
+audiocraft
+basic-pitch
+soundfile

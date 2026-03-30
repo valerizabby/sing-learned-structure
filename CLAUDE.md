@@ -24,23 +24,27 @@
 Текстовый промт          Сегментный план
       ↓                  (куплет/припев/бридж...)
 [Text → Prefix]                 ↓
-(готовое решение,        [Segment → SSM]
- совместимое с MIDI)     (CNN, обучается на
-      ↓                   размеченном датасете)
-  Prefix                        ↓
-  (8–16 тактов MIDI)      Predicted SSM
-      ↓_________________________|
+(готовое решение,        [Seg2SSM: AffinitySSM]
+ совместимое с MIDI)     (аналитически, без обучения)
+      ↓                         ↓
+  Prefix                  Affinity SSM
+  (8–16 тактов MIDI)      ↓_________________________|
              [SingLS]
          (лучшая конфигурация)
                 ↓
           Полный MIDI-трек
 ```
 
-**Подзадача 1 — Segment → SSM:**
-- Взять размеченный датасет с сегментами (куплет/припев)
-- Построить SSM-ки по существующей логике (chroma → cosine similarity)
-- Обучить CNN: `segment_plan → SSM`
-- Loss: L1(SSM_pred, SSM_gt) + регуляризация диагонали + block-consistency
+**Подзадача 1 — Segment → SSM (реализовано):**
+- Датасет: SALAMI — 422 трека с разметкой секций
+- Подход: матрица музыкального сходства A [8×8]
+  - `A[label_i, label_j]` = сходство между барами типа `label_i` и `label_j`
+  - `A_fixed`: задана из теории музыки (verse↔chorus=0.7, bridge контрастирует)
+  - `A_empirical`: оценена из данных как среднее SSM по парам меток
+- Построение: `segment_plan → bar_labels → A[bar_labels][:, bar_labels] → SSM`
+- Опционально: Gaussian smoothing на границах блоков
+- Модуль: `Seg2SSM/affinity_ssm.py`, класс `AffinitySSM`
+- Детали: `Seg2SSM/ARCHITECTURE.md`
 
 **Подзадача 2 — Text → Prefix:**
 - Использовать готовую модель, генерирующую MIDI по тексту (8–16 тактов)
@@ -49,7 +53,7 @@
 **Обязательные абляции при интеграции:**
 1. No SSM (baseline)
 2. GT SSM (верхняя граница)
-3. Predicted SSM (целевой режим)
+3. Affinity SSM — `AffinitySSM.fixed().build(segment_plan)` (целевой режим)
 4. Random SSM (нижняя граница)
 
 ---
@@ -111,6 +115,27 @@ data_preparation/
 │   ├── data_preprocessing.py # MIDI → piano roll (tempo-adjusted, binarized)
 │   └── build_BINS.py         # train/val/test split
 └── union.py                  # LMD + MAESTRO → combined_*.pt
+```
+
+### Seg2SSM — генерация SSM из сегментного плана
+
+```
+Seg2SSM/
+├── ARCHITECTURE.md            # архитектура и обоснование подхода
+├── Plan.md                    # порядок запуска
+├── affinity_ssm.py            # AffinitySSM: segment_plan → SSM [64×64]
+├── checkpoints/
+│   ├── affinity_matrix.pt     # эмпирическая матрица A (422 трека SALAMI)
+│   └── affinity_heatmap.png   # визуализация матрицы
+├── eval_results/affinity/     # картинки для презентации
+└── data_prep/
+    ├── parse_annotations.py   # SALAMI → annotations.json
+    ├── download_audio.py      # скачивание mp3 с archive.org
+    ├── extract_features.py    # audio → bar-chroma + tanh-SSM
+    ├── estimate_affinity.py   # оценка A из данных
+    ├── build_dataset.py       # сборка датасета (для визуализации)
+    ├── visualize.py           # проверка датасета
+    └── visualize_affinity.py  # слайды: A_fixed vs A_emp, примеры SSM
 ```
 
 ### Legacy-файлы (ориентир, не трогать)
