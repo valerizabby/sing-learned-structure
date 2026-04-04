@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "overleaf": {
+      "command": "node",
+      "args": [
+        "/Users/valeriia.zaborovskaia/Desktop/diploma/OverleafMCP/overleaf-mcp-server.js"
+      ]
+    }
+  }
+}

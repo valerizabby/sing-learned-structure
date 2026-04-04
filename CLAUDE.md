@@ -62,16 +62,18 @@
 
 ### Метрики (датасет combined, 2600 треков)
 
+> Метрики пересчитаны 2026-04-04 после фикса температуры (`temperature=1.5` в `topk_sample_one`).
+> Старые числа были получены в условиях коллапса генерации и недействительны.
+
 | Модель | MSE ↓ | IOU ↑ |
 |--------|-------|-------|
 | None (baseline) | 0.0645 | 0.0848 |
-| SING (Original) | 0.1628 | 0.2006 |
-| LSA | 0.0682 | 0.1450 |
-| LSA_SB | 0.0583 | 0.0767 |
-| Transformer + beta=0.03 | 0.1007 | 0.2751 |
+| SING (Original) | 0.0896 | 0.2793 |
+| LSA | 0.0577 | 0.0929 |
+| Transformer + beta=0.03 (3SING*) | 0.0689 | 0.3194 |
 
 Лучшая модель по IOU — **HierarchicalGenerator с beta=0.03 и структурой как регуляризацией** (`trained_transformer_original_less_struct_combined`).
-Лучшая по MSE — **LSA_SB**.
+Лучшая по MSE — **LSA** (`trained_lsa_combined`).
 
 ---
 
@@ -96,6 +98,35 @@ SingLS/
 │   └── config.py                 # DEVICE, hidden_size, AttentionType enum
 └── main.py                       # Точка входа: выбор модели, обучение
 ```
+
+### End-to-end пайплайн интеграции
+
+```
+pipeline/
+├── generate.py   # Основной пайплайн: text + segment_plan → MIDI
+│                 #   run_pipeline(model, prompt, segment_plan, ssm_type, ...)
+│                 #   CLI: python -m pipeline.generate --model ... --prompt ... --segment ...
+└── ablation.py   # Ablation study: none / random / affinity / empirical SSM
+│                 #   run_ablation(...) — генерирует все 4 варианта, сохраняет метрики
+│                 #   CLI: python -m pipeline.ablation --model ... --segment ...
+```
+
+**Формат сегментного плана (CLI):**
+```
+"intro:8,verse:16,chorus:16,verse:16,chorus:16,outro:8"
+```
+Доступные метки: `intro`, `verse`, `chorus`, `bridge`, `instr`, `outro`, `other`
+
+**SSMType** (enum в `pipeline/generate.py`):
+- `affinity`  — A_fixed (теоретическая, целевой режим)
+- `empirical` — A_empirical из SALAMI (нужен `--empirical_ckpt`)
+- `random`    — случайная симметричная SSM (нижняя граница ablation)
+- `none`      — нулевая SSM (baseline)
+
+**Технические детали генерации:**
+- `batched_ssm` для B=1 — это просто матрица `[T_total, T_total]` (формат `batch_SSM`)
+- `AffinitySSM.build(segment_plan, ssm_size=T_total)` → сразу правильный размер
+- `generate_from_prefix(model, prefix_roll, ssm, gen_len)` — авторегрессия без `ModelTrainer`
 
 ### Инференс и оценка
 

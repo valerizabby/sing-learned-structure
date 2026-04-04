@@ -1,11 +1,14 @@
+import os
 from enum import Enum
 
 import torch
 
 DEVICE = torch.device("cpu")
-EXP_PATH = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data"
-EXP_PATH_LMD = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/lmd_processed"
-EXP_PATH_COMBINED = "/Users/valerizab/Desktop/masters-diploma/sing-learned-structure/data/combined"
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+EXP_PATH = os.path.join(_ROOT, "data")
+EXP_PATH_LMD = os.path.join(_ROOT, "data", "lmd_processed")
+EXP_PATH_COMBINED = os.path.join(_ROOT, "data", "combined")
 
 
 hidden_size = 128

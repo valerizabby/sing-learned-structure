@@ -131,12 +131,15 @@ def make_variable_size_batches(data, min_batch_size=3, max_batch_size=128):
     return batches
 
 
-def topk_sample_one(sequence, k):
+def topk_sample_one(sequence, k, temperature=1.5):
     # takes in size sequence length, batch size, values
+    # Temperature > 1.0 flattens the distribution over top-k notes, preventing
+    # the autoregressive loop from collapsing to 1-2 dominant notes.
+    # TODO: move temperature into a central config (SingLS/config/config.py)
     softmax = sparsemax.Sparsemax(dim=2)
     vals, indices = torch.topk(sequence[:, :, 20:108], k)
     indices += 20
-    seq = torch.distributions.Categorical(softmax(vals.float()))
+    seq = torch.distributions.Categorical(softmax((vals / temperature).float()))
     samples = seq.sample()
     onehot = F.one_hot(torch.gather(indices, -1, samples.unsqueeze(-1)), num_classes=sequence.shape[2]).squeeze(dim=2)
     return (onehot)
