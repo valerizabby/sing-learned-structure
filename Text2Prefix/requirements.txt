@@ -1,0 +1,20 @@
+# Пины boto3/botocore останавливают backtracking pip-резолвера (транзитивная зависимость audiocraft)
+boto3==1.42.67
+botocore==1.42.67
+
+# transformers: >=4.47 использует torch.utils._pytree.register_pytree_node,
+# которого нет в torch<2.6; пиним до проверенного диапазона
+transformers>=4.31.0,<4.47.0
+
+# xformers несовместим с MPS и вызывает цепочку ошибок импорта.
+# audiocraft работает без него (xformers нужен только для CUDA-оптимизации).
+# Если нужна CUDA: установить вручную совместимую версию xformers отдельно.
+
+# Основные зависимости
+audiocraft
+basic-pitch
+librosa
+pretty_midi
+torch
+numpy
+soundfile
