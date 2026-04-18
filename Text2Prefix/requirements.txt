@@ -1,20 +1,38 @@
-# Пины boto3/botocore останавливают backtracking pip-резолвера (транзитивная зависимость audiocraft)
-boto3==1.42.67
-botocore==1.42.67
+# Text2Prefix зависимости для text2prefix_midi.py (рекомендуется)
+# ─────────────────────────────────────────────────────────────────────────────
+# Используется text2midi (amaai-lab) — прямая генерация MIDI без аудио.
+# Установка:
+#   pip install -r requirements.txt
 
-# transformers: >=4.47 использует torch.utils._pytree.register_pytree_node,
-# которого нет в torch<2.6; пиним до проверенного диапазона
-transformers>=4.31.0,<4.47.0
+# HuggingFace — загрузка и инференс text2midi
+transformers>=4.40.0
+huggingface_hub>=0.22.0
+accelerate>=0.27.0
 
-# xformers несовместим с MPS и вызывает цепочку ошибок импорта.
-# audiocraft работает без него (xformers нужен только для CUDA-оптимизации).
-# Если нужна CUDA: установить вручную совместимую версию xformers отдельно.
+# MIDI-токенизация (используется text2midi для декодирования токенов в MIDI)
+# ВАЖНО: vocab_remi.pkl создан с miditok 3.x API.
+# Не понижать до 2.x — несовместимо.
+miditok>=3.0.0,<4.0.0
 
-# Основные зависимости
-audiocraft
-basic-pitch
-librosa
-pretty_midi
+# MIDI → piano roll
+pretty_midi>=0.2.10
+
+# PyTorch (устанавливается отдельно под платформу)
+# https://pytorch.org/get-started/locally/
 torch
+
 numpy
-soundfile
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# УСТАРЕВШИЕ зависимости (text2prefix.py — MusicGen + BasicPitch pipeline)
+# Оставлены для справки; не нужны при использовании text2prefix_midi.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+# boto3==1.42.67
+# botocore==1.42.67
+# transformers>=4.31.0,<4.47.0
+# audiocraft        ← тяжёлый (Meta MusicGen), конфликты с xformers/MPS
+# basic-pitch       ← нейросетевая транскрипция audio→MIDI (Spotify)
+# librosa           ← детекция темпа из аудио
+# soundfile         ← запись временных wav-файлов для BasicPitch

@@ -7,30 +7,28 @@
 
 ---
 
-## Pipeline
+## Рекомендуемый модуль: `text2prefix_midi.py` (text2midi)
+
+TODO проверить можно ли ускорить инференс? нужно ли генерировать так много тактов?
+TODO решить проблему коллапсирования нот слева? возможно следует брать меньше тактов? проработать температуру?
+
+Прямая генерация MIDI без аудио-промежуточного шага.
 
 ```
 Текстовый промт
-"upbeat jazz piano, 120 bpm"
+"upbeat jazz piano, 120 BPM"
         │
         ▼
-┌───────────────────┐
-│  MusicGen-small   │  Meta AI, text-to-audio
-│  facebook/        │  → wav (mono, 32kHz)
-│  musicgen-small   │  длина: n_bars × 4 / (tempo/60) сек
-└───────────────────┘
-        │  wav (numpy array)
-        ▼
-┌───────────────────┐
-│   Basic Pitch     │  Spotify, audio → MIDI
-│   (нейросеть)     │  → список нот (onset, offset, pitch, velocity)
-└───────────────────┘
-        │  note events
+┌───────────────────────┐
+│  text2midi            │  amaai-lab/text2midi (HuggingFace)
+│  LLaMA-based decoder  │  text → MIDI-токены (REMI+)
+│  ~400 MB              │  → pretty_midi.PrettyMIDI
+└───────────────────────┘
+        │  pretty_midi
         ▼
 ┌───────────────────┐
 │  Compatibility    │  Согласование с форматом SingLS
-│  Layer            │  • tempo detection (librosa)
-│                   │  • MIDI → piano roll [T, 128]
+│  Layer            │  • MIDI → piano roll [T, 128]
 │                   │  • binarize (threshold=0.5)
 │                   │  • clip pitch to [20, 108]
 │                   │  • align frame rate: fs = tempo / 60
@@ -40,53 +38,91 @@
 (piano_roll [T, 128], tempo: float, num_beats: int)
 ```
 
+### Установка
+
+```bash
+pip install transformers>=4.40 miditok>=3.0 pretty_midi huggingface_hub accelerate
+```
+
 ---
 
-## Ключевые компоненты
+## Устаревший модуль: `text2prefix.py` (MusicGen + BasicPitch)
 
-### MusicGen (Meta AI)
-- Модель: `facebook/musicgen-small` (~300 MB, работает на CPU/MPS/CUDA)
-- Вход: текстовый промт + длительность в секундах
-- Выход: аудио tensor (stereo → усредняем до mono)
-- Зависимость: `audiocraft` (pip)
+Оставлен для совместимости. Используется как fallback, если text2midi недоступен.
 
-### Basic Pitch (Spotify)
-- Нейросетевая транскрипция audio → MIDI
-- Вход: numpy array (mono, любая частота дискретизации)
-- Выход: `pretty_midi.PrettyMIDI` с нотными событиями
-- Зависимость: `basic-pitch` (pip)
+```
+Текстовый промт
+        │
+        ▼
+┌───────────────────┐
+│  MusicGen-small   │  Meta AI, text-to-audio → wav (mono, 32kHz)
+└───────────────────┘
+        │  wav
+        ▼
+┌───────────────────┐
+│   Basic Pitch     │  Spotify, audio → MIDI (нейросетевая транскрипция)
+└───────────────────┘
+        │  MIDI
+        ▼
+┌───────────────────┐
+│  Compatibility    │  Согласование с форматом SingLS
+│  Layer            │
+└───────────────────┘
+        │
+        ▼
+(piano_roll [T, 128], tempo: float, num_beats: int)
+```
 
-### Compatibility Layer
-Согласование с форматом SingLS:
+---
 
-| Параметр | SingLS | Text2Prefix |
-|----------|--------|-------------|
+## Сравнение подходов
+
+| Критерий               | text2prefix_midi.py (✅ рекомендуется) | text2prefix.py (⚠️ устарел) |
+|------------------------|----------------------------------------|------------------------------|
+| Шагов в pipeline       | 2: text → MIDI → piano roll            | 3: text → audio → MIDI → roll |
+| Точность нот           | ✅ точная — нет транскрипции           | ❌ BasicPitch вносит шум     |
+| Контроль темпа         | ✅ точный (MIDI tempo events)          | ❌ BPM влияет приблизительно |
+| Зависимости            | ✅ лёгкие (transformers, miditok)      | ❌ audiocraft (тяжёлый), xformers-конфликты |
+| Домен                  | символьная музыка (MIDI)               | аудио (любые тембры)         |
+
+---
+
+## Ключевые компоненты `text2prefix_midi.py`
+
+### text2midi (amaai-lab)
+- Модель: `amaai-lab/text2midi` (~400 MB, CUDA/MPS/CPU)
+- Архитектура: LLaMA-based decoder, обучен на парах (текст, MIDI)
+- MIDI-токенизация: REMI+ (miditok)
+- Вход: текстовый промт + `{N} BPM`
+- Выход: последовательность MIDI-токенов → `pretty_midi.PrettyMIDI`
+
+### Compatibility Layer (идентичен text2prefix.py)
+
+| Параметр | SingLS | text2prefix_midi |
+|----------|--------|-----------------|
 | Piano roll shape | `[T, 128]` | `[T, 128]` ✓ |
-| Frame rate | `fs = tempo/60` bps | вычисляется из tempo |
+| Frame rate | `fs = tempo/60` bps | вычисляется из tempo ✓ |
 | Note range | 20–108 | clip → [20, 108] ✓ |
 | Binarized | да | порог 0.5 ✓ |
 | Формат вывода | `(tensor, tempo, num_beats)` | `(tensor, tempo, num_beats)` ✓ |
-
-**Frame rate:** SingLS использует `fs = tempo/60` фреймов в секунду
-(один фрейм = одна доля). При tempo=120 → fs=2 фрейма/сек → T = n_bars × 4 × 2 = 64 для 8 баров.
 
 ---
 
 ## Интерфейс модуля
 
 ```python
-from text2prefix import Text2Prefix
+from Text2Prefix.text2prefix_midi import Text2PrefixMIDI
 
-gen = Text2Prefix(model_size="small")   # или "medium"
+gen = Text2PrefixMIDI()   # загрузка модели при первом вызове .generate()
 
 piano_roll, tempo, num_beats = gen.generate(
     prompt    = "gentle piano melody in C major",
     n_bars    = 8,
-    tempo     = 120.0,     # None = авто-определение из аудио
+    tempo     = 120.0,     # явно передаём темп — повышает воспроизводимость
 )
 # piano_roll: Tensor [T, 128]
 # tempo:      float (BPM)
-# num_beats:  int   (T × beats_per_frame = num_beats)
+# num_beats:  int
 ```
 
 ---
@@ -95,36 +131,23 @@ piano_roll, tempo, num_beats = gen.generate(
 
 ```
 Text2Prefix/
-├── ARCHITECTURE.md      ← этот файл
-├── text2prefix.py       ← основной модуль (Text2Prefix)
-├── requirements.txt     ← зависимости
-└── demo.py              ← быстрая проверка pipeline
+├── ARCHITECTURE.md         ← этот файл
+├── text2prefix_midi.py     ← ✅ рекомендуемый модуль (text2midi)
+├── text2prefix.py          ← ⚠️  устаревший модуль (MusicGen + BasicPitch)
+├── requirements.txt        ← зависимости для text2prefix_midi.py
+└── demo.py                 ← быстрая проверка pipeline
 ```
-
----
-
-## Ограничения и компромиссы
-
-| Ограничение | Следствие |
-|---|---|
-| MusicGen генерирует аудио (не MIDI) | транскрипция Basic Pitch вносит шум |
-| Basic Pitch оптимизирован под piano | для других инструментов качество ниже |
-| MusicGen не управляет точным темпом | tempo в промте влияет приблизительно |
-| Tempo авто-детект может ошибаться | рекомендуется явно передавать tempo |
-
-**Рекомендация для диплома:** указывать tempo явно в промте и передавать параметром,
-это даёт воспроизводимые результаты.
 
 ---
 
 ## Интеграция в end-to-end пайплайн
 
 ```python
-from Text2Prefix.text2prefix import Text2Prefix
-from Seg2SSM.affinity_ssm    import AffinitySSM
+from Text2Prefix.text2prefix_midi import Text2PrefixMIDI
+from Seg2SSM.affinity_ssm          import AffinitySSM
 
 # Шаг 1: генерируем prefix из текста
-prefix_roll, tempo, num_beats = Text2Prefix().generate(
+prefix_roll, tempo, num_beats = Text2PrefixMIDI().generate(
     prompt = "melancholic piano, slow tempo",
     n_bars = 8,
     tempo  = 80.0,

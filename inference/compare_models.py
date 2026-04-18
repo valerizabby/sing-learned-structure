@@ -53,6 +53,56 @@ def compute_ssm(sequence, block_size=4):
     return ssm_block
 
 
+# Krumhansl-Schmuckler key profiles (major and minor for all 12 keys).
+# Source: Krumhansl, C.L. (1990). Cognitive Foundations of Musical Pitch.
+_KS_MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09,
+                       2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+_KS_MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53,
+                       2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+
+# Все 24 профиля (12 мажорных + 12 минорных), транспонированные по кругу квинт.
+_KS_PROFILES = np.stack([
+    np.roll(_KS_MAJOR, i) for i in range(12)
+] + [
+    np.roll(_KS_MINOR, i) for i in range(12)
+])  # [24, 12]
+
+
+def scale_consistency(piano_roll: np.ndarray) -> float:
+    """
+    Доля нот (взвешенная по длительности), попадающих в наиболее подходящую
+    тональность по алгоритму Krumhansl-Schmuckler.
+
+    Args:
+        piano_roll: np.ndarray [T, 128], бинарный или вещественный piano roll.
+
+    Returns:
+        float в [0, 1]. 1.0 = все ноты в тональности, 0.0 = ни одна не попала.
+    """
+    # Pitch-class histogram: суммируем активности по всем октавам → [12]
+    pc_hist = np.zeros(12)
+    for midi_note in range(128):
+        pc_hist[midi_note % 12] += piano_roll[:, midi_note].sum()
+
+    total = pc_hist.sum()
+    if total < 1e-8:
+        return 0.0
+
+    pc_hist = pc_hist / total  # нормируем
+
+    # Коррелируем с каждым из 24 профилей, выбираем лучший
+    correlations = _KS_PROFILES @ pc_hist  # [24]
+    best_profile = _KS_PROFILES[np.argmax(correlations)]  # [12]
+
+    # Scale consistency = доля нот, чей pitch-класс входит в тональность.
+    # "Входит" = профиль > среднего (7 из 12 нот для мажора/минора).
+    in_scale_mask = best_profile > best_profile.mean()  # [12] bool
+    in_scale_weight = sum(
+        pc_hist[pc] for pc in range(12) if in_scale_mask[pc]
+    )
+    return float(in_scale_weight)
+
+
 def iou_ssm(ssm1, ssm2, threshold=0.5):
     bin1 = ssm1 > threshold
     bin2 = ssm2 > threshold
@@ -79,6 +129,7 @@ def evaluate_piano_roll(piano_roll, reference_ssm=None, block_size=4):
     diag_vals = np.diag(ssm)
     off_diag_vals = ssm[~np.eye(ssm.shape[0], dtype=bool)]
     diag_drop = 1.0 - diag_vals.mean() / (off_diag_vals.mean() + 1e-8)
+    sc = scale_consistency(piano_roll)
 
     if reference_ssm is not None:
         iou = iou_ssm(ssm, reference_ssm)
@@ -92,6 +143,7 @@ def evaluate_piano_roll(piano_roll, reference_ssm=None, block_size=4):
         "mean_ssm": mean_ssm,
         "std_ssm": std_ssm,
         "diag_drop": diag_drop,
+        "scale_consistency": sc,
         "iou": iou,
         "ssm": ssm,
         "mse": mse,
