@@ -3,7 +3,9 @@ from enum import Enum
 
 import torch
 
-DEVICE = torch.device("cpu")
+# Переопределяется через переменную среды SING_DEVICE.
+# Пример для Colab: os.environ["SING_DEVICE"] = "cuda"  (до любых импортов SingLS)
+DEVICE = torch.device(os.environ.get("SING_DEVICE", "cpu"))
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EXP_PATH = os.path.join(_ROOT, "data")
