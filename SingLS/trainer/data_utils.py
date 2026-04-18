@@ -8,7 +8,7 @@ import math
 
 # this function takes in the piece of music and returns the chroma vectors
 def get_chroma(roll, length):
-    chroma_matrix = torch.zeros((roll.size()[0], 12))
+    chroma_matrix = torch.zeros((roll.size()[0], 12), device=roll.device)
     for note in range(0, 12):
         chroma_matrix[:, note] = torch.sum(roll[:, note::12], axis=1)
     return chroma_matrix
