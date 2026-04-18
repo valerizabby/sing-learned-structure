@@ -2,3 +2,27 @@
 trained/.DS_Store
 .ipynb_checkpoints
 usable_data/
+
+# Large data — upload separately to Colab via Drive
+data/combined/
+data/meta_info/
+data/logs/
+data/seg2ssm/
+data/lmd_processed/
+
+# Training artifacts
+models/
+outputs/
+
+# Environments and IDE
+venv/
+.idea/
+__pycache__/
+*.pyc
+
+# Downloaded media
+*.mp4
+*.mp4.part
+*.mp4.ytdl
+Seg2SSM/data_prep/audio/
+Seg2SSM/data_prep/features/
