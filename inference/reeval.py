@@ -1,10 +1,15 @@
 """
-Пересчёт метрик IOU/MSE после фикса температуры (temperature=1.5 в topk_sample_one).
+Пересчёт метрик IOU/MSE/ScaleCons после фикса температуры (temperature=1.5 в topk_sample_one).
 Запуск из корня репозитория:
     python3 -m inference.reeval
+
+Схема усреднения: compare_models_avg вызывается OUTER_RUNS раз,
+каждый раз генерируя INNER_N треков. Итог усредняется по OUTER_RUNS вызовам.
+Итоговая выборка: OUTER_RUNS * INNER_N = 30 * 10 = 300 треков на модель.
 """
 
-import os
+import numpy as np
+from collections import defaultdict
 from inference.compare_models import compare_models_avg
 
 DATA_PATH = "data/combined/combined_test.pt"
@@ -15,19 +20,37 @@ MODELS = {
     "LSA**":           "data/meta_info/trained_lsa_combined/model_30_epochs.txt",
 }
 
-# n — количество прогонов для усреднения, length — длина генерации в битах
-N = 30
-LENGTH = 95
+OUTER_RUNS = 30   # сколько раз вызывать compare_models_avg
+INNER_N    = 10   # сколько треков генерировать за один вызов
+LENGTH     = 95
 
 if __name__ == "__main__":
-    print(f"\nПересчёт метрик: n={N}, length={LENGTH}, data={DATA_PATH}\n")
-    print(f"{'Модель':<35} {'IOU':>8} {'MSE':>8}")
-    print("-" * 55)
+    print(f"\nПересчёт метрик: {OUTER_RUNS} runs × {INNER_N} треков = {OUTER_RUNS * INNER_N} треков на модель")
+    print(f"length={LENGTH}, data={DATA_PATH}\n")
+    print(f"{'Модель':<35} {'IOU':>8} {'MSE':>8} {'ScaleCons':>10}")
+    print("-" * 65)
 
-    results = {}
+    final_results = {}
+
     for name, path in MODELS.items():
-        metrics = compare_models_avg(model_path=path, data_path=DATA_PATH, _len_=LENGTH, n=N)
-        results[name] = metrics
-        print(f"{name:<35} {metrics['iou']:>8.4f} {metrics['mse']:>8.4f}")
+        run_metrics = defaultdict(list)
 
-    print("\nГотово. Обнови таблицу в CLAUDE.md и в слайдах.")
+        for run in range(OUTER_RUNS):
+            m = compare_models_avg(model_path=path, data_path=DATA_PATH, _len_=LENGTH, n=INNER_N)
+            for k, v in m.items():
+                run_metrics[k].append(v)
+
+        final_results[name] = {
+            "iou": np.mean(run_metrics["iou"]),
+            "mse": np.mean(run_metrics["mse"]),
+            "scale_consistency": np.mean(run_metrics["scale_consistency"]),
+        }
+
+    print("\n" + "=" * 65)
+    print("ИТОГОВЫЕ МЕТРИКИ")
+    print("=" * 65)
+    print(f"{'Модель':<35} {'IOU':>8} {'MSE':>8} {'ScaleCons':>10}")
+    print("-" * 65)
+    for name, m in final_results.items():
+        print(f"{name:<35} {m['iou']:>8.4f} {m['mse']:>8.4f} {m['scale_consistency']:>10.4f}")
+    print("=" * 65)

@@ -65,12 +65,12 @@
 > Метрики пересчитаны 2026-04-04 после фикса температуры (`temperature=1.5` в `topk_sample_one`).
 > Старые числа были получены в условиях коллапса генерации и недействительны.
 
-| Модель | MSE ↓ | IOU ↑ |
-|--------|-------|-------|
-| None (baseline) | 0.0645 | 0.0848 |
-| SING (Original) | 0.0896 | 0.2793 |
-| LSA | 0.0577 | 0.0929 |
-| Transformer + beta=0.03 (3SING*) | 0.0689 | 0.3194 |
+| Модель | MSE ↓ | IOU ↑ | ScaleCons ↑ | Чекпоинт |
+|--------|-------|-------|-------------|----------|
+| None (baseline) | 0.0645 | 0.0848 | — | — |
+| SING (Original) | 0.0800 | 0.2986 | 0.5342 | `data/meta_info/trained_original_combined/model_30_epochs.txt` |
+| LSA | 0.0568 | 0.0959 | 0.4561 | `data/meta_info/trained_lsa_combined/model_30_epochs.txt` |
+| 3SING* | 0.0692 | 0.3198 | 0.5330 | `data/meta_info/trained_transformer_original_less_struct_combined/model_30_epochs.txt` |
 
 Лучшая модель по IOU — **HierarchicalGenerator с beta=0.03 и структурой как регуляризацией** (`trained_transformer_original_less_struct_combined`).
 Лучшая по MSE — **LSA** (`trained_lsa_combined`).
@@ -234,3 +234,4 @@ total_loss = BCE(output, target) + SSM_L2_loss + β_struct * structure_loss
 4. **Чекпоинты** именуются по схеме: `trained_{модель}_{данные}_{особенность}`.
 5. **Конфигурация** — через `SingLS/config/config.py`, не хардкодить в скриптах.
 6. При добавлении новых модулей соблюдать интерфейс: `forward(x, ssm, hidden) → (output, hidden)`.
+7. При изменении или добавлении кода, обновляй документацию (.md файлы: HOWTO, ARCHITECTURE, README) по необходимости. 

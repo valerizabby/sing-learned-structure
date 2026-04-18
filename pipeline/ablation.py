@@ -33,6 +33,7 @@ from SingLS.config.config import DEVICE
 from Seg2SSM.affinity_ssm import LABEL_NAMES
 from pipeline.generate import (
     SSMType,
+    _DEFAULT_PREFIX_BARS,
     build_ssm,
     generate_from_prefix,
     parse_segment_plan,
@@ -42,9 +43,55 @@ from Text2Prefix.text2prefix import Text2Prefix
 
 
 BEATS_PER_BAR = 4
+GT_DATA_PATH  = "data/combined/combined_test.pt"
+GT_N_TRACKS   = 20   # сколько GT треков усреднять для референса
 
 
 # ── SSM-метрики ─────────────────────────────────────────────────────────────
+
+def load_gt_reference_ssm(T_total: int, n_tracks: int = GT_N_TRACKS) -> np.ndarray:
+    """
+    Строит эталонную SSM как среднее по n_tracks треков из combined_test.pt.
+    Каждая SSM обрезается/ресайзится до T_total × T_total через билинейную интерполяцию.
+    """
+    import torch as _torch
+    from scipy.ndimage import zoom
+
+    data = _torch.load(GT_DATA_PATH, weights_only=False)
+    accumulated = np.zeros((T_total, T_total), dtype=np.float32)
+    count = 0
+
+    for item in data[:n_tracks]:
+        roll = item[0]  # tensor [T, 128]
+        if isinstance(roll, _torch.Tensor):
+            roll = roll.numpy()
+        if roll.ndim != 2 or roll.shape[1] != 128:
+            continue
+
+        ssm = compute_ssm_from_roll(roll.astype(np.float32))  # [T_gt, T_gt]
+        T_gt = ssm.shape[0]
+        if T_gt < 4:
+            continue
+
+        # Ресайз до T_total × T_total
+        factor = T_total / T_gt
+        ssm_resized = zoom(ssm, factor, order=1)  # билинейная интерполяция
+        # zoom может дать размер ±1 из-за округления
+        ssm_resized = ssm_resized[:T_total, :T_total]
+        if ssm_resized.shape != (T_total, T_total):
+            pad = T_total - ssm_resized.shape[0]
+            ssm_resized = np.pad(ssm_resized, ((0, pad), (0, pad)), mode="edge")
+
+        accumulated += ssm_resized
+        count += 1
+
+    if count == 0:
+        raise RuntimeError("Не удалось загрузить ни одного GT трека из combined_test.pt")
+
+    gt_ssm = accumulated / count
+    print(f"  GT reference SSM: mean={gt_ssm.mean():.3f}, std={gt_ssm.std():.3f}  ({count} tracks)")
+    return gt_ssm
+
 
 def compute_ssm_from_roll(roll: np.ndarray) -> np.ndarray:
     """
@@ -153,7 +200,6 @@ def run_ablation(
     prompt: str,
     segment_plan: List[Tuple[int, int]],
     tempo: float = 120.0,
-    n_prefix_bars: int = 8,
     n_gen_bars: int = 64,
     empirical_ckpt: Optional[str] = None,
     out_dir: str = "outputs/ablation",
@@ -161,27 +207,28 @@ def run_ablation(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    T_prefix = n_prefix_bars * BEATS_PER_BAR
-    T_gen    = n_gen_bars    * BEATS_PER_BAR
-    T_total  = T_prefix + T_gen
+    T_gen = n_gen_bars * BEATS_PER_BAR
 
     print("\n" + "=" * 60)
     print("Ablation Study — SSM type comparison")
     print("=" * 60)
     plan_str = ", ".join(f"{LABEL_NAMES.get(l,'?')}:{b}b" for l, b in segment_plan)
-    print(f"  Segment plan : {plan_str}")
-    print(f"  Tempo        : {tempo} BPM")
-    print(f"  Prefix       : {n_prefix_bars} bars ({T_prefix} beats)")
-    print(f"  Generation   : {n_gen_bars} bars ({T_gen} beats)")
-    print(f"  Output dir   : {out}")
+    print(f"  Segment plan   : {plan_str}")
+    print(f"  Tempo          : {tempo} BPM")
+    print(f"  Prefix budget  : {_DEFAULT_PREFIX_BARS} bars max")
+    print(f"  Generation     : {n_gen_bars} bars ({T_gen} beats)")
+    print(f"  Output dir     : {out}")
 
     # ── Step 1: Генерируем prefix один раз ────────────────────────────────
     print("\n[1/3] Generating shared prefix...")
     text2prefix = Text2Prefix()
     prefix_roll, detected_tempo, _ = text2prefix.generate(
-        prompt=prompt, n_bars=n_prefix_bars, tempo=tempo,
+        prompt=prompt, n_bars=_DEFAULT_PREFIX_BARS, tempo=tempo,
     )
-    print(f"  prefix shape : {tuple(prefix_roll.shape)}, tempo={detected_tempo:.1f}")
+    # Реальный T_prefix берётся из shape (text2midi мог сгенерировать короче бюджета)
+    T_prefix = prefix_roll.shape[0]
+    T_total  = T_prefix + T_gen
+    print(f"  prefix shape : {tuple(prefix_roll.shape)}  ({T_prefix // BEATS_PER_BAR} bars), tempo={detected_tempo:.1f}")
 
     # ── Step 2: Загружаем модель ───────────────────────────────────────────
     print("\n[2/3] Loading model...")
@@ -189,9 +236,11 @@ def run_ablation(
     model.eval()
     print(f"  Model type : {type(model).__name__}")
 
-    # Эталонная affinity SSM (для метрик IOU/MSE)
-    reference_ssm_tensor = build_ssm(SSMType.AFFINITY, segment_plan, T_total)
-    reference_ssm = reference_ssm_tensor.numpy()
+    # Эталонная SSM — среднее по GT трекам из combined_test.pt.
+    # Использование реальных треков как референса честнее чем affinity SSM:
+    # метрика не зависит от того, какой тип SSM подаётся на вход модели.
+    print("\n[ref] Building GT reference SSM...")
+    reference_ssm = load_gt_reference_ssm(T_total)
 
     # ── Step 3: Генерация для каждого типа SSM ────────────────────────────
     print("\n[3/3] Running ablation conditions...")
@@ -214,7 +263,7 @@ def run_ablation(
         ssm = build_ssm(ssm_type, segment_plan, T_total, empirical_ckpt).to(DEVICE)
         print(f"  SSM: mean={ssm.mean():.3f}")
 
-        sequence = generate_from_prefix(model, prefix_roll, ssm, T_gen, warmup_beats=10)
+        sequence = generate_from_prefix(model, prefix_roll, ssm, T_gen, warmup_beats=4)
         full_roll = sequence.squeeze(1).detach().cpu().numpy().round()[:T_total]
 
         # MIDI
@@ -222,7 +271,7 @@ def run_ablation(
         midi.write(str(cond_dir / "generated.mid"))
         print(f"  Saved: {cond_dir / 'generated.mid'}")
 
-        # Метрики относительно affinity SSM
+        # Метрики относительно GT SSM (среднее по combined_test)
         gen_ssm = compute_ssm_from_roll(full_roll)
         iou = iou_ssm(gen_ssm, reference_ssm)
         mse = mse_ssm(gen_ssm, reference_ssm)
@@ -261,7 +310,6 @@ def main():
     parser.add_argument("--segment", required=True,
                         help='Сегментный план: "intro:8,verse:16,chorus:16,outro:8"')
     parser.add_argument("--tempo", type=float, default=120.0)
-    parser.add_argument("--n_prefix_bars", type=int, default=8)
     parser.add_argument("--n_gen_bars", type=int, default=64)
     parser.add_argument("--empirical_ckpt",
                         default="Seg2SSM/checkpoints/affinity_matrix.pt")
@@ -275,7 +323,6 @@ def main():
         prompt=args.prompt,
         segment_plan=segment_plan,
         tempo=args.tempo,
-        n_prefix_bars=args.n_prefix_bars,
         n_gen_bars=args.n_gen_bars,
         empirical_ckpt=args.empirical_ckpt,
         out_dir=args.out_dir,

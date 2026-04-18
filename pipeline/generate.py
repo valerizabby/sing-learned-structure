@@ -34,12 +34,22 @@ import torch
 from SingLS.config.config import DEVICE
 from SingLS.trainer.data_utils import topk_batch_sample
 from Seg2SSM.affinity_ssm import AffinitySSM, LABEL_NAMES
-from Text2Prefix.text2prefix import Text2Prefix
+
+# Предпочитаем прямой MIDI-генератор (нет шума транскрипции).
+# Fallback на MusicGen+BasicPitch, если text2midi не установлен.
+try:
+    from Text2Prefix.text2prefix_midi import Text2PrefixMIDI as Text2Prefix
+    _PREFIX_BACKEND = "text2midi"
+except ImportError:
+    from Text2Prefix.text2prefix import Text2Prefix          # type: ignore[assignment]
+    _PREFIX_BACKEND = "musicgen+basicpitch"
 
 
 # ── Константы ──────────────────────────────────────────────────────────────
 
-BEATS_PER_BAR = 4
+BEATS_PER_BAR      = 4
+_DEFAULT_PREFIX_BARS = 8   # бюджет токенов для text2midi; реальный T_prefix определяется по shape
+
 LABEL_NAME_TO_ID = {v: k for k, v in LABEL_NAMES.items()}
 
 
@@ -128,6 +138,8 @@ def generate_from_prefix(
     batched_ssm: torch.Tensor,  # [T_total, T_total]
     gen_len: int,
     warmup_beats: int = 4,
+    temperature: float = 1.5,
+    prefix_in_sequence: bool = False,  # True: OOD-фреймы видны attention; False: Fix 2 из COLLAPSE_DEBUG
 ) -> torch.Tensor:
     """
     Авторегрессивная генерация с заданным prefix и SSM.
@@ -138,33 +150,64 @@ def generate_from_prefix(
     Решение:
       - init_hidden (нули) вместо set_random_hidden (случайный шум)
       - через LSTM пускаем только последние warmup_beats битов prefix
-      - полный prefix остаётся в sequence и виден SSM attention-механизму
+      - prefix_in_sequence=False (Fix 2): OOD-фреймы НЕ добавляются в sequence,
+        attention видит только сгенерированные in-distribution ноты
+      - prefix_in_sequence=True: старое поведение (prefix в sequence, OOD виден)
 
     Returns:
-        sequence [T_prefix + gen_steps, 1, 128]
+        sequence [T_prefix + gen_steps, 1, 128]  (если prefix_in_sequence=True)
+                 [gen_steps, 1, 128]              (если prefix_in_sequence=False)
     """
     model.eval()
     model.init_hidden(1)   # нулевая инициализация, не random
 
-    sequence = prefix.unsqueeze(1).to(DEVICE)   # [T_prefix, 1, 128]
+    prefix_t = prefix.unsqueeze(1).to(DEVICE)   # [T_prefix, 1, 128]
 
-    # Warmup: через LSTM пропускаем только последние warmup_beats битов.
-    # Полный prefix в sequence доступен attention-механизму.
-    warmup = min(warmup_beats, sequence.shape[0])
-    next_element = sequence[-warmup:]            # [warmup, 1, 128]
+    # Warmup: через LSTM пропускаем только последние warmup_beats битов prefix,
+    # чтобы прогреть hidden state без патологического накопления OOD-ошибок.
+    # Важно: prev_sequence для warmup должен быть непустым (sparsemax падает на
+    # пустом тензоре). Используем полный prefix_t — нас интересует только hidden state.
+    warmup = min(warmup_beats, prefix_t.shape[0])
+    if warmup > 0:
+        warmup_input = prefix_t[-warmup:]       # [warmup, 1, 128]
+        with torch.no_grad():
+            model.forward(warmup_input.float(), 1, prefix_t, batched_ssm)
 
-    max_notes = batched_ssm.shape[0] - sequence.shape[0]
+    # Начальная sequence для авторегрессии.
+    # Важно: sequence не может быть пустой — sparsemax в original_attention
+    # упадёт на пустом срезе SSM (IndexError: max() on empty tensor).
+    # При prefix_in_sequence=False берём только последний фрейм prefix —
+    # минимальное OOD-загрязнение, но attention получает хотя бы 1 фрейм.
+    if prefix_in_sequence:
+        sequence = prefix_t                     # [T_prefix, 1, 128]
+    else:
+        sequence = prefix_t[-1:]                # [1, 1, 128] — один последний фрейм
+
+    max_notes = batched_ssm.shape[0] - prefix_t.shape[0]
     steps = min(gen_len, max_notes)
+
+    # Первый генерируемый шаг: авторегрессия с last warmup frame как входом
+    if warmup > 0:
+        next_element = prefix_t[-1:]            # [1, 1, 128] — последний бит prefix
+    else:
+        next_element = torch.zeros(1, 1, 128, device=DEVICE)
 
     for _ in range(steps):
         with torch.no_grad():
             output, _ = model.forward(
                 next_element.float(), 1, sequence, batched_ssm
             )
-            next_element = topk_batch_sample(output, 50)  # [1, 1, 128]
+            next_element = topk_batch_sample(output, 50, temperature=temperature)  # [1, 1, 128]
         sequence = torch.vstack((sequence, next_element.to(DEVICE)))
 
-    return sequence   # [T_prefix + steps, 1, 128]
+    # Собираем полный sequence для визуализации.
+    # При prefix_in_sequence=False: sequence = [last_prefix_frame] + [generated].
+    # Добавляем оставшиеся prefix-фреймы спереди для корректного отображения.
+    if prefix_in_sequence:
+        full_sequence = sequence
+    else:
+        full_sequence = torch.vstack((prefix_t[:-1], sequence))  # [T_prefix + steps, 1, 128]
+    return full_sequence
 
 
 # ── MIDI экспорт ────────────────────────────────────────────────────────────
@@ -269,12 +312,14 @@ def run_pipeline(
     prompt: str,
     segment_plan: List[Tuple[int, int]],
     tempo: float = 120.0,
-    n_prefix_bars: int = 8,
     n_gen_bars: int = 64,
     ssm_type: SSMType = SSMType.AFFINITY,
     empirical_ckpt: Optional[str] = None,
     out_dir: str = "outputs",
     warmup_beats: int = 4,
+    temperature: float = 1.5,
+    prefix_pt: Optional[str] = None,
+    prefix_in_sequence: bool = False,  # False = Fix 2: OOD prefix не виден attention
 ) -> Tuple[np.ndarray, torch.Tensor, torch.Tensor]:
     """
     Запускает полный end-to-end пайплайн.
@@ -287,9 +332,8 @@ def run_pipeline(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    T_prefix = n_prefix_bars * BEATS_PER_BAR
-    T_gen    = n_gen_bars    * BEATS_PER_BAR
-    T_total  = T_prefix + T_gen
+    T_prefix_requested = _DEFAULT_PREFIX_BARS * BEATS_PER_BAR
+    T_gen    = n_gen_bars * BEATS_PER_BAR
 
     print("\n" + "=" * 60)
     print("End-to-End Music Generation Pipeline")
@@ -300,22 +344,48 @@ def run_pipeline(
     )
     print(f"  Segment plan  : {plan_str}")
     print(f"  Tempo         : {tempo} BPM")
-    print(f"  Prefix        : {n_prefix_bars} bars ({T_prefix} beats)")
+    print(f"  Prefix budget : {_DEFAULT_PREFIX_BARS} bars max ({T_prefix_requested} beats)")
     print(f"  Generation    : {n_gen_bars} bars ({T_gen} beats)")
     print(f"  SSM type      : {ssm_type.value}")
     print(f"  Warmup beats  : {warmup_beats}")
+    print(f"  Prefix in seq : {prefix_in_sequence}  ({'OOD visible to attention' if prefix_in_sequence else 'Fix2: clean attention context'})")
     print(f"  Output dir    : {out}")
 
     # ── Step 1: Text → Prefix ──────────────────────────────────────────────
-    print("\n[1/4] Text → Prefix (MusicGen + Basic Pitch)...")
-    text2prefix = Text2Prefix()
-    prefix_roll, detected_tempo, num_beats = text2prefix.generate(
-        prompt=prompt,
-        n_bars=n_prefix_bars,
-        tempo=tempo,
-    )
-    print(f"  prefix shape : {tuple(prefix_roll.shape)}")
-    print(f"  tempo        : {detected_tempo:.1f} BPM")
+    if prefix_pt is not None:
+        print(f"\n[1/4] Loading saved prefix from {prefix_pt}...")
+        saved = torch.load(prefix_pt, weights_only=False)
+        prefix_roll   = saved["prefix_roll"]    # [T_prefix, 128]
+        detected_tempo = saved["tempo"]
+        print(f"  prefix shape : {tuple(prefix_roll.shape)}")
+        print(f"  tempo        : {detected_tempo:.1f} BPM  (loaded)")
+    else:
+        print(f"\n[1/4] Text → Prefix  (backend: {_PREFIX_BACKEND})...")
+        text2prefix = Text2Prefix()
+        prefix_roll, detected_tempo, num_beats = text2prefix.generate(
+            prompt=prompt,
+            n_bars=_DEFAULT_PREFIX_BARS,
+            tempo=tempo,
+        )
+        print(f"  prefix shape : {tuple(prefix_roll.shape)}")
+        print(f"  tempo        : {detected_tempo:.1f} BPM")
+
+    # Пересчитываем T_prefix из реальной формы prefix_roll.
+    # text2midi может завершиться раньше (EOS) → prefix_roll короче запрошенного.
+    # T_prefix = prefix_roll.shape[0] соответствует реальному контенту (после тримминга).
+    T_prefix = prefix_roll.shape[0]
+    T_total  = T_prefix + T_gen
+    if T_prefix != T_prefix_requested:
+        print(
+            f"  [!] Prefix trimmed: {T_prefix_requested} → {T_prefix} beats "
+            f"({T_prefix_requested // BEATS_PER_BAR} → {T_prefix // BEATS_PER_BAR} bars). "
+            f"Красная линия сдвинута влево."
+        )
+
+    # Сохраняем prefix чтобы можно было переиспользовать в других прогонах
+    prefix_save_path = out / "prefix_roll.pt"
+    torch.save({"prefix_roll": prefix_roll, "tempo": detected_tempo}, prefix_save_path)
+    print(f"  Saved prefix   : {prefix_save_path}")
 
     # ── Step 2: Segment plan → SSM ─────────────────────────────────────────
     print("\n[2/4] Segment plan → SSM (AffinitySSM)...")
@@ -331,7 +401,11 @@ def run_pipeline(
     print(f"  Model type : {type(model).__name__}")
     print(f"  Generating {T_gen} beats ({n_gen_bars} bars)...")
 
-    sequence = generate_from_prefix(model, prefix_roll, ssm, T_gen, warmup_beats)
+    sequence = generate_from_prefix(
+        model, prefix_roll, ssm, T_gen,
+        warmup_beats, temperature,
+        prefix_in_sequence=prefix_in_sequence,
+    )
     full_roll = sequence.squeeze(1).detach().cpu().numpy().round()
     full_roll = full_roll[:T_total]
     print(f"  Output shape : {full_roll.shape}")
@@ -389,10 +463,6 @@ def main():
         help="Темп в BPM (по умолчанию: 120)",
     )
     parser.add_argument(
-        "--n_prefix_bars", type=int, default=8,
-        help="Длина prefix в барах (по умолчанию: 8)",
-    )
-    parser.add_argument(
         "--n_gen_bars", type=int, default=64,
         help="Длина генерируемой части в барах (по умолчанию: 64)",
     )
@@ -424,6 +494,31 @@ def main():
             "Полный prefix всё равно виден SSM attention-механизму."
         ),
     )
+    parser.add_argument(
+        "--prefix_pt", default=None,
+        help=(
+            "Путь к сохранённому prefix_roll.pt (из предыдущего прогона).\n"
+            "Если задан — MusicGen не запускается, prefix берётся из файла.\n"
+            "Полезно для чистого сравнения (например, разные температуры на одном prefix)."
+        ),
+    )
+    parser.add_argument(
+        "--temperature", type=float, default=1.5,
+        help=(
+            "Температура сэмплирования (по умолчанию: 1.5).\n"
+            "T=1.0 — без температуры (коллапс к 1–2 нотам).\n"
+            "T>1.0 — более равномерное распределение → разнообразная генерация."
+        ),
+    )
+
+    parser.add_argument(
+        "--prefix_in_sequence", action="store_true", default=False,
+        help=(
+            "Если задан — OOD-фреймы prefix попадают в sequence и видны attention.\n"
+            "По умолчанию (False) — Fix 2: attention видит только in-distribution ноты,\n"
+            "что предотвращает коллапс при OOD prefix от text2midi."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -435,12 +530,14 @@ def main():
         prompt=args.prompt,
         segment_plan=segment_plan,
         tempo=args.tempo,
-        n_prefix_bars=args.n_prefix_bars,
         n_gen_bars=args.n_gen_bars,
         ssm_type=ssm_type,
         empirical_ckpt=args.empirical_ckpt,
         out_dir=args.out_dir,
         warmup_beats=args.warmup_beats,
+        temperature=args.temperature,
+        prefix_pt=args.prefix_pt,
+        prefix_in_sequence=args.prefix_in_sequence,
     )
 
 
