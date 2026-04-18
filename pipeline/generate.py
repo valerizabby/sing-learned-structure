@@ -140,6 +140,10 @@ def generate_from_prefix(
     warmup_beats: int = 4,
     temperature: float = 1.5,
     prefix_in_sequence: bool = False,  # True: OOD-фреймы видны attention; False: Fix 2 из COLLAPSE_DEBUG
+    temp_start: float = 3.0,    # Fix B: начальная температура (выше → шире распределение в первых шагах)
+    temp_warmup_steps: int = 30, # Fix B: за сколько шагов линейно снизить до temperature
+    use_softmax: bool = True,   # Fix A (pipeline-only): softmax вместо sparsemax в сэмплировании;
+                                #   НЕ применяется в стандартном eval (там модель ожидает sparsemax)
 ) -> torch.Tensor:
     """
     Авторегрессивная генерация с заданным prefix и SSM.
@@ -153,6 +157,8 @@ def generate_from_prefix(
       - prefix_in_sequence=False (Fix 2): OOD-фреймы НЕ добавляются в sequence,
         attention видит только сгенерированные in-distribution ноты
       - prefix_in_sequence=True: старое поведение (prefix в sequence, OOD виден)
+      - Fix B: temperature scheduling — высокая температура в первых шагах,
+        линейно снижается до temperature за temp_warmup_steps шагов.
 
     Returns:
         sequence [T_prefix + gen_steps, 1, 128]  (если prefix_in_sequence=True)
@@ -192,12 +198,18 @@ def generate_from_prefix(
     else:
         next_element = torch.zeros(1, 1, 128, device=DEVICE)
 
-    for _ in range(steps):
+    for step in range(steps):
+        # Fix B: temperature scheduling — линейный спад от temp_start до temperature
+        if step < temp_warmup_steps and temp_start > temperature:
+            t = temperature + (temp_start - temperature) * (1.0 - step / temp_warmup_steps)
+        else:
+            t = temperature
+
         with torch.no_grad():
             output, _ = model.forward(
                 next_element.float(), 1, sequence, batched_ssm
             )
-            next_element = topk_batch_sample(output, 50, temperature=temperature)  # [1, 1, 128]
+            next_element = topk_batch_sample(output, 50, temperature=t, use_softmax=use_softmax)  # [1, 1, 128]
         sequence = torch.vstack((sequence, next_element.to(DEVICE)))
 
     # Собираем полный sequence для визуализации.
@@ -320,6 +332,9 @@ def run_pipeline(
     temperature: float = 1.5,
     prefix_pt: Optional[str] = None,
     prefix_in_sequence: bool = False,  # False = Fix 2: OOD prefix не виден attention
+    use_softmax: bool = True,          # Fix A (pipeline-only): softmax вместо sparsemax
+    temp_start: float = 3.0,           # Fix B: стартовая температура
+    temp_warmup_steps: int = 30,       # Fix B: шагов для спада температуры
 ) -> Tuple[np.ndarray, torch.Tensor, torch.Tensor]:
     """
     Запускает полный end-to-end пайплайн.
@@ -349,6 +364,8 @@ def run_pipeline(
     print(f"  SSM type      : {ssm_type.value}")
     print(f"  Warmup beats  : {warmup_beats}")
     print(f"  Prefix in seq : {prefix_in_sequence}  ({'OOD visible to attention' if prefix_in_sequence else 'Fix2: clean attention context'})")
+    print(f"  Sampling      : {'softmax (Fix A)' if use_softmax else 'sparsemax'}")
+    print(f"  Temp schedule : {temp_start:.1f} → {temperature:.1f} over {temp_warmup_steps} steps (Fix B)")
     print(f"  Output dir    : {out}")
 
     # ── Step 1: Text → Prefix ──────────────────────────────────────────────
@@ -405,6 +422,9 @@ def run_pipeline(
         model, prefix_roll, ssm, T_gen,
         warmup_beats, temperature,
         prefix_in_sequence=prefix_in_sequence,
+        use_softmax=use_softmax,
+        temp_start=temp_start,
+        temp_warmup_steps=temp_warmup_steps,
     )
     full_roll = sequence.squeeze(1).detach().cpu().numpy().round()
     full_roll = full_roll[:T_total]
@@ -519,6 +539,24 @@ def main():
             "что предотвращает коллапс при OOD prefix от text2midi."
         ),
     )
+    parser.add_argument(
+        "--no_softmax", action="store_true", default=False,
+        help=(
+            "Отключает Fix A: вернуть sparsemax при сэмплировании в pipeline.\n"
+            "По умолчанию pipeline использует softmax (безопаснее для OOD-префиксов)."
+        ),
+    )
+    parser.add_argument(
+        "--temp_start", type=float, default=3.0,
+        help=(
+            "Fix B: начальная температура для temperature scheduling (по умолчанию: 3.0).\n"
+            "Линейно снижается до --temperature за --temp_warmup_steps шагов."
+        ),
+    )
+    parser.add_argument(
+        "--temp_warmup_steps", type=int, default=30,
+        help="Fix B: число шагов для линейного спада температуры (по умолчанию: 30).",
+    )
 
     args = parser.parse_args()
 
@@ -538,6 +576,9 @@ def main():
         temperature=args.temperature,
         prefix_pt=args.prefix_pt,
         prefix_in_sequence=args.prefix_in_sequence,
+        use_softmax=not args.no_softmax,
+        temp_start=args.temp_start,
+        temp_warmup_steps=args.temp_warmup_steps,
     )
 
 

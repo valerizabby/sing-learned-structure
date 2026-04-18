@@ -131,24 +131,30 @@ def make_variable_size_batches(data, min_batch_size=3, max_batch_size=128):
     return batches
 
 
-def topk_sample_one(sequence, k, temperature=1.5):
+def topk_sample_one(sequence, k, temperature=1.5, use_softmax=False):
     # takes in size sequence length, batch size, values
     # Temperature > 1.0 flattens the distribution over top-k notes, preventing
     # the autoregressive loop from collapsing to 1-2 dominant notes.
-    # TODO: move temperature into a central config (SingLS/config/config.py)
-    softmax = sparsemax.Sparsemax(dim=2)
+    # use_softmax=True: prevents sparsemax from zeroing out top-k candidates,
+    # used in pipeline (OOD prefix) but NOT during training/standard eval to
+    # avoid distribution shift (models were trained with sparsemax inputs).
     vals, indices = torch.topk(sequence[:, :, 20:108], k)
     indices += 20
-    seq = torch.distributions.Categorical(softmax((vals / temperature).float()))
+    if use_softmax:
+        probs = torch.softmax((vals / temperature).float(), dim=2)
+    else:
+        softmax_op = sparsemax.Sparsemax(dim=2)
+        probs = softmax_op((vals / temperature).float())
+    seq = torch.distributions.Categorical(probs)
     samples = seq.sample()
     onehot = F.one_hot(torch.gather(indices, -1, samples.unsqueeze(-1)), num_classes=sequence.shape[2]).squeeze(dim=2)
     return (onehot)
 
 
 # samples multiple times for the time-step
-def topk_batch_sample(sequence, k, temperature=1.5):
+def topk_batch_sample(sequence, k, temperature=1.5, use_softmax=False):
     for i in range(0, 3):
-        new = topk_sample_one(sequence, k, temperature=temperature)
+        new = topk_sample_one(sequence, k, temperature=temperature, use_softmax=use_softmax)
         if i == 0:
             sum = new
         else:
