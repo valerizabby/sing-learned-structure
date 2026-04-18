@@ -1,7 +1,10 @@
 import sys
 import time
 import os
+import csv
+import json
 import logging
+from datetime import datetime
 from tqdm import tqdm
 
 import torch
@@ -24,16 +27,21 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
     filename=os.path.join(LOG_DIR, "training.log"),
-    filemode="w",
+    filemode="a",
     format="%(asctime)s | %(levelname)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    level=logging.INFO,
+    level=logging.DEBUG,
 )
 
 console = logging.StreamHandler(sys.stdout)
 console.setLevel(logging.INFO)
 console.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
 logging.getLogger().addHandler(console)
+
+_CSV_COLUMNS = [
+    "epoch", "total_loss", "bce_loss", "ssm_loss", "struct_loss",
+    "train_time_s", "n_batches",
+]
 
 
 def structure_loss(struct, target, eps=1e-8):
@@ -65,15 +73,13 @@ def custom_loss(output, target):
         ssm_err += ssm_loss
 
         if i == 0:
-            logging.info(f"[Loss Debug] Sample {i}")
-            logging.info(f"SSM1 mean: {SSM1.mean():.4f}, SSM2 mean: {SSM2.mean():.4f}")
-            logging.info(f"SSM loss (sample 0): {ssm_loss:.6f}")
+            logging.debug(f"[Loss] sample0 SSM1_mean={SSM1.mean():.4f} SSM2_mean={SSM2.mean():.4f} ssm_loss={ssm_loss:.6f}")
 
     total_loss = bce_loss + ssm_err
-    logging.info(
-        f"[Loss Debug] BCE loss: {bce_loss.item():.6f}, SSM error: {ssm_err.item():.6f}, Total: {total_loss.item():.6f}"
+    logging.debug(
+        f"[Loss] bce={bce_loss.item():.6f} ssm={ssm_err.item():.6f} total={total_loss.item():.6f}"
     )
-    return total_loss
+    return total_loss, bce_loss.item(), float(ssm_err)
 
 
 class ModelTrainer:
@@ -85,19 +91,65 @@ class ModelTrainer:
         self.data = data
         self.data_length = data[0][0].shape[0]
 
-        # alpha scheduling
-        # self.alpha_max = 0.05
-        # self.alpha_warmup_epochs = 10
-        # self.alpha_history = []
-
         # struct loss weight
         self.beta_struct = 0.03
+
+        # будет установлен в train_epochs
+        self._csv_path = None   # type: Optional[str]
+        self._json_path = None  # type: Optional[str]
+        self._run_meta: dict = {}
 
         logging.info("Starting training with config:")
         logging.info(f"  Attention type: {self.generator.attention_type}")
         logging.info(f"  Hidden size: {self.hidden_size}")
         logging.info(f"  Data shape: {len(self.data)}")
         logging.info(f"  Random seed: 2022")
+
+    # ── Structured logging helpers ────────────────────────────────────────────
+
+    def _init_run_logs(self, save_name, num_epochs, extra_meta=None):
+        """Создаёт CSV и JSON для текущего прогона обучения."""
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_id = f"{save_name}_{ts}"
+
+        self._csv_path = os.path.join(LOG_DIR, f"{run_id}_metrics.csv")
+        self._json_path = os.path.join(LOG_DIR, f"{run_id}_config.json")
+
+        self._run_meta = {
+            "run_id": run_id,
+            "save_name": save_name,
+            "started_at": ts,
+            "attention_type": str(self.generator.attention_type),
+            "hidden_size": self.hidden_size,
+            "beta_struct": self.beta_struct,
+            "num_epochs": num_epochs,
+            "data_size": len(self.data),
+            **(extra_meta or {}),
+            "epochs": [],
+        }
+
+        with open(self._csv_path, "w", newline="") as f:
+            csv.DictWriter(f, fieldnames=_CSV_COLUMNS).writeheader()
+
+        with open(self._json_path, "w") as f:
+            json.dump(self._run_meta, f, indent=2)
+
+        logging.info(f"[Metrics] CSV  → {self._csv_path}")
+        logging.info(f"[Metrics] JSON → {self._json_path}")
+
+    def _log_epoch(self, row: dict):
+        """Дописывает строку в CSV и обновляет epochs-список в JSON."""
+        if self._csv_path is None:
+            return
+
+        with open(self._csv_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_CSV_COLUMNS)
+            writer.writerow(row)
+
+        self._run_meta["epochs"].append(row)
+        self._run_meta["finished_at"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+        with open(self._json_path, "w") as f:
+            json.dump(self._run_meta, f, indent=2)
 
     def _get_structure_model(self):
         # HierarchicalGenerator: .structure_model
@@ -153,6 +205,11 @@ class ModelTrainer:
         losslist = []
         piclist = []
 
+        self._init_run_logs(save_name, num_epochs, extra_meta={
+            "full_training": full_training,
+            "variable_size_batches": variable_size_batches,
+        })
+
         logging.info("Starting training loop")
         logging.info(f"  Epochs: {num_epochs}")
         logging.info(f"  Full training: {full_training}")
@@ -160,16 +217,9 @@ class ModelTrainer:
         logging.info(f"  Model attention: {self.generator.attention_type}")
 
         try:
-            # стабилизация локальной генерации
             freeze_structure(self.generator)
 
             for epoch in tqdm(range(num_epochs), desc="Epochs", dynamic_ncols=True):
-                # self._update_alpha(epoch)
-                # alpha_val = self._get_alpha_value()
-                # if alpha_val is not None:
-                #     self.alpha_history.append(alpha_val)
-                #     logging.info(f"[Alpha] epoch={epoch + 1} alpha={alpha_val:.6f}")
-
                 if epoch == 5:
                     unfreeze_structure(self.generator)
 
@@ -183,32 +233,57 @@ class ModelTrainer:
                 else:
                     batches = make_batches(self.data[:100], self.batch_size, self.data_length)
 
-                cum_loss = 0.0
+                cum_total = 0.0
+                cum_bce   = 0.0
+                cum_ssm   = 0.0
+                cum_struct = 0.0
 
                 for batch in tqdm(batches, desc=f"Epoch {epoch + 1}", leave=False, dynamic_ncols=True):
                     if full_training:
-                        loss = self.train(batch)
+                        total, bce, ssm, struct = self.train(batch)
                     else:
-                        loss = self.train(batch[:, :105, :])
-                    cum_loss += loss
-                    del batch, loss
+                        total, bce, ssm, struct = self.train(batch[:, :105, :])
+                    cum_total  += total
+                    cum_bce    += bce
+                    cum_ssm    += ssm
+                    cum_struct += struct
+                    del batch
 
-                epoch_loss = cum_loss / len(batches)
-                losslist.append(epoch_loss)
-
+                n = len(batches)
+                epoch_total  = cum_total  / n
+                epoch_bce    = cum_bce    / n
+                epoch_ssm    = cum_ssm    / n
+                epoch_struct = cum_struct / n
                 elapsed = time.time() - start_time
-                msg = f"Epoch {epoch + 1}/{num_epochs} | Loss: {epoch_loss:.5f} | Time: {elapsed:.2f}s"
+
+                losslist.append(epoch_total)
+
+                msg = (
+                    f"Epoch {epoch + 1}/{num_epochs} | "
+                    f"loss={epoch_total:.5f} bce={epoch_bce:.5f} "
+                    f"ssm={epoch_ssm:.5f} struct={epoch_struct:.5f} | "
+                    f"time={elapsed:.1f}s"
+                )
                 tqdm.write(msg)
                 logging.info(msg)
 
+                row = {
+                    "epoch":       epoch + 1,
+                    "total_loss":  round(epoch_total,  6),
+                    "bce_loss":    round(epoch_bce,    6),
+                    "ssm_loss":    round(epoch_ssm,    6),
+                    "struct_loss": round(epoch_struct, 6),
+                    "train_time_s": round(elapsed,     2),
+                    "n_batches":   n,
+                }
+                self._log_epoch(row)
+
                 save_dir = os.path.join("models", "checkpoints")
                 os.makedirs(save_dir, exist_ok=True)
-                filename = f"{save_name}-epoch-{epoch + 1:02d}-loss-{epoch_loss:.5f}.pt"
+                filename = f"{save_name}-epoch-{epoch + 1:02d}-loss-{epoch_total:.5f}.pt"
                 path = os.path.join(save_dir, filename)
-
                 torch.save(self.generator, path)
-                tqdm.write(f"Model checkpoint saved to {path}")
-                logging.info(f"Model checkpoint saved to {path}")
+                logging.info(f"Checkpoint → {path}")
 
                 snap = self.generate_n_examples(n=1, length=95, starter_notes=10)
                 piclist.append(snap)
@@ -252,15 +327,14 @@ class ModelTrainer:
         output_full = output_full[:min_len]
         target_full = target_full[:min_len]
 
-        single_loss = custom_loss(output_full, target_full)
+        single_loss, bce_val, ssm_val = custom_loss(output_full, target_full)
+        struct_val = 0.0
 
         structure_model = self._get_structure_model()
-        # вызываем build struct в 25% случаев
         if structure_model is not None:
             MAX_T = 256
             T_struct = min(min_len, MAX_T)
 
-            # случайное окно по времени
             if min_len > T_struct:
                 start = torch.randint(0, min_len - T_struct + 1, (1,)).item()
             else:
@@ -270,25 +344,25 @@ class ModelTrainer:
                 batch_size=batch_size,
                 batched_ssm=self_sim,
                 device=output_full.device,
-            )  # [B, T, T]
-            logging.info("[Structure Model] Build struct.")
+            )
             with torch.no_grad():
                 struct = structure_model(ssm_batch)
             struct = struct[start:start + T_struct]
 
             target_crop = target_full[start:start + T_struct]
-            logging.info("[Structure Model] Compute loss.")
             s_loss = structure_loss(struct, target_crop)
             single_loss = single_loss + self.beta_struct * s_loss
-            logging.info(f"[StructLoss] struct_loss={s_loss.item():.6f}, beta={self.beta_struct:.4f}")
+            struct_val = float(s_loss.detach())
+            logging.debug(f"[StructLoss] struct={struct_val:.6f} beta={self.beta_struct}")
 
         single_loss.backward()
         self.optimizer.step()
 
-        loss += float(single_loss.detach().to(DEVICE))
+        total_val = float(single_loss.detach())
+        loss += total_val
 
         del next_element, self_sim, sequence, generated, single_loss
-        return loss
+        return total_val, bce_val, ssm_val, struct_val
 
     def generate_n_pieces(self, initial_vectors, n_pieces, length, batched_ssm):
         self.generator.eval()
