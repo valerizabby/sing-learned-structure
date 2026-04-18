@@ -306,6 +306,7 @@ class ModelTrainer:
         return losslist, piclist
 
     def train(self, batch, starter_notes=5):
+        batch = batch.to(DEVICE)
         batch_size = batch.shape[0]
         self_sim = batch_SSM(batch.transpose(0, 1), batch_size)  # batched SSM
         sequence = batch[:, 0:starter_notes, :].transpose(0, 1)
@@ -394,7 +395,7 @@ class ModelTrainer:
         return sequence
 
     def generate_n_examples(self, n=1, length=390, starter_notes=10, piece_inds=[0], random_source_pieces=False):
-        pieces = torch.vstack([self.data[i][0].unsqueeze(0) for i in piece_inds])
+        pieces = torch.vstack([self.data[i][0].unsqueeze(0) for i in piece_inds]).to(DEVICE)
         first_vecs = pieces[:, 0:starter_notes, :]
         batched_ssms = batch_SSM(pieces.transpose(0, 1), n)
 
