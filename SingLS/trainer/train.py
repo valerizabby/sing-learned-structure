@@ -58,7 +58,7 @@ def structure_loss(struct, target, eps=1e-8):
 
     return 1.0 - (struct_feat * target_feat).sum(dim=1).mean()
 
-def custom_loss(output, target, ssm_lambda=1.0):
+def custom_loss(output, target):
     criterion = nn.BCEWithLogitsLoss()
 
     bce_loss = criterion(output, target.float())
@@ -66,12 +66,7 @@ def custom_loss(output, target, ssm_lambda=1.0):
     ssm_err = 0
 
     for i in range(batch_size):
-        # sigmoid maps logits → [0,1], same domain as binary target.
-        # Gradient flows through sigmoid back to model weights.
-        # Without this, SSM(logits) can be negative while SSM(binary) ∈ [0,1]
-        # — incompatible domains make the SSM loss meaningless.
-        output_prob = torch.sigmoid(output[:, i, :])
-        SSM1 = SSM(output_prob)
+        SSM1 = SSM(output[:, i, :])
         SSM2 = SSM(target[:, i, :])
         diff = (SSM1 - SSM2) ** 2
         ssm_loss = torch.sum(diff) / (SSM2.size(0) ** 2)
@@ -83,23 +78,21 @@ def custom_loss(output, target, ssm_lambda=1.0):
                 f"ssm_loss={ssm_loss:.6f}"
             )
 
-    total_loss = bce_loss + ssm_lambda * ssm_err
+    total_loss = bce_loss + ssm_err
     logging.debug(
-        f"[Loss] bce={bce_loss.item():.6f} ssm={ssm_err.item():.6f} "
-        f"lambda={ssm_lambda} total={total_loss.item():.6f}"
+        f"[Loss] bce={bce_loss.item():.6f} ssm={ssm_err.item():.6f} total={total_loss.item():.6f}"
     )
     return total_loss, bce_loss.item(), ssm_err.detach().item()
 
 
 class ModelTrainer:
-    def __init__(self, generator, optimizer, data, hidden_size=128, batch_size=50, ssm_lambda=1.0):
+    def __init__(self, generator, optimizer, data, hidden_size=128, batch_size=50):
         self.generator = generator
         self.optimizer = optimizer
         self.batch_size = batch_size
         self.hidden_size = hidden_size
         self.data = data
         self.data_length = data[0][0].shape[0]
-        self.ssm_lambda = ssm_lambda
 
         # struct loss weight
         self.beta_struct = 0.03
@@ -113,7 +106,6 @@ class ModelTrainer:
         logging.info(f"  Attention type: {self.generator.attention_type}")
         logging.info(f"  Hidden size: {self.hidden_size}")
         logging.info(f"  Data shape: {len(self.data)}")
-        logging.info(f"  SSM lambda: {self.ssm_lambda}")
         logging.info(f"  Random seed: 2022")
 
     # ── Structured logging helpers ────────────────────────────────────────────
@@ -133,7 +125,6 @@ class ModelTrainer:
             "attention_type": str(self.generator.attention_type),
             "hidden_size": self.hidden_size,
             "beta_struct": self.beta_struct,
-            "ssm_lambda": self.ssm_lambda,
             "num_epochs": num_epochs,
             "data_size": len(self.data),
             **(extra_meta or {}),
@@ -340,7 +331,7 @@ class ModelTrainer:
         output_full = output_full[:min_len]
         target_full = target_full[:min_len]
 
-        single_loss, bce_val, ssm_val = custom_loss(output_full, target_full, ssm_lambda=self.ssm_lambda)
+        single_loss, bce_val, ssm_val = custom_loss(output_full, target_full)
         struct_val = 0.0
 
         structure_model = self._get_structure_model()
