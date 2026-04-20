@@ -152,8 +152,8 @@ def topk_sample_one(sequence, k, temperature=1.5, use_softmax=False):
 
 
 # samples multiple times for the time-step
-def topk_batch_sample(sequence, k, temperature=1.5, use_softmax=False):
-    for i in range(0, 3):
+def topk_batch_sample(sequence, k, temperature=1.5, use_softmax=False, n_samples=3):
+    for i in range(n_samples):
         new = topk_sample_one(sequence, k, temperature=temperature, use_softmax=use_softmax)
         if i == 0:
             sum = new

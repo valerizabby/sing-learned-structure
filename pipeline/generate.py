@@ -139,11 +139,12 @@ def generate_from_prefix(
     gen_len: int,
     warmup_beats: int = 4,
     temperature: float = 1.5,
-    prefix_in_sequence: bool = False,  # True: OOD-фреймы видны attention; False: Fix 2 из COLLAPSE_DEBUG
-    temp_start: float = 3.0,    # Fix B: начальная температура (выше → шире распределение в первых шагах)
-    temp_warmup_steps: int = 30, # Fix B: за сколько шагов линейно снизить до temperature
-    use_softmax: bool = True,   # Fix A (pipeline-only): softmax вместо sparsemax в сэмплировании;
-                                #   НЕ применяется в стандартном eval (там модель ожидает sparsemax)
+    prefix_in_sequence: bool = False,
+    temp_start: float = 3.0,
+    temp_warmup_steps: int = 30,
+    use_softmax: bool = True,
+    topk_k: int = 50,           # сколько топ-нот рассматривать при сэмплировании
+    n_samples: int = 3,         # сколько раз сэмплировать на каждый бит (OR → полифония)
 ) -> torch.Tensor:
     """
     Авторегрессивная генерация с заданным prefix и SSM.
@@ -209,7 +210,7 @@ def generate_from_prefix(
             output, _ = model.forward(
                 next_element.float(), 1, sequence, batched_ssm
             )
-            next_element = topk_batch_sample(output, 50, temperature=t, use_softmax=use_softmax)  # [1, 1, 128]
+            next_element = topk_batch_sample(output, topk_k, temperature=t, use_softmax=use_softmax, n_samples=n_samples)
         sequence = torch.vstack((sequence, next_element.to(DEVICE)))
 
     # Собираем полный sequence для визуализации.
@@ -227,13 +228,27 @@ def generate_from_prefix(
 def piano_roll_to_midi(
     piano_roll: np.ndarray,   # [T, 128]
     tempo: float,
+    note_extension: int = 0,  # на сколько битов продлить каждую активную ноту вперёд
 ) -> pretty_midi.PrettyMIDI:
-    """Конвертирует piano roll в pretty_midi.PrettyMIDI."""
+    """Конвертирует piano roll в pretty_midi.PrettyMIDI.
+
+    note_extension > 0: каждый активный бит продлевает ноту на note_extension
+    битов вперёд (max-pool по времени). Делает звучание более легато.
+    """
     fs = tempo / 60.0
     midi = pretty_midi.PrettyMIDI(initial_tempo=tempo)
     instrument = pretty_midi.Instrument(program=0)  # Acoustic Grand Piano
 
-    pr = piano_roll.T  # [128, T]
+    pr = piano_roll.T.copy()  # [128, T]
+
+    if note_extension > 0:
+        T = pr.shape[1]
+        extended = pr.copy()
+        for shift in range(1, note_extension + 1):
+            if shift < T:
+                extended[:, shift:] = np.maximum(extended[:, shift:], pr[:, :T - shift])
+        pr = extended
+
     for note in range(pr.shape[0]):
         on = None
         for t in range(pr.shape[1]):
@@ -331,10 +346,13 @@ def run_pipeline(
     warmup_beats: int = 4,
     temperature: float = 1.5,
     prefix_pt: Optional[str] = None,
-    prefix_in_sequence: bool = False,  # False = Fix 2: OOD prefix не виден attention
-    use_softmax: bool = True,          # Fix A (pipeline-only): softmax вместо sparsemax
-    temp_start: float = 3.0,           # Fix B: стартовая температура
-    temp_warmup_steps: int = 30,       # Fix B: шагов для спада температуры
+    prefix_in_sequence: bool = False,
+    use_softmax: bool = True,
+    temp_start: float = 3.0,
+    temp_warmup_steps: int = 30,
+    topk_k: int = 50,           # сколько топ-нот рассматривать при сэмплировании
+    n_samples: int = 3,         # OR-выборок на бит (полифония)
+    note_extension: int = 0,    # продлить каждую ноту на N битов (легато)
 ) -> Tuple[np.ndarray, torch.Tensor, torch.Tensor]:
     """
     Запускает полный end-to-end пайплайн.
@@ -364,8 +382,9 @@ def run_pipeline(
     print(f"  SSM type      : {ssm_type.value}")
     print(f"  Warmup beats  : {warmup_beats}")
     print(f"  Prefix in seq : {prefix_in_sequence}  ({'OOD visible to attention' if prefix_in_sequence else 'Fix2: clean attention context'})")
-    print(f"  Sampling      : {'softmax (Fix A)' if use_softmax else 'sparsemax'}")
-    print(f"  Temp schedule : {temp_start:.1f} → {temperature:.1f} over {temp_warmup_steps} steps (Fix B)")
+    print(f"  Sampling      : {'softmax' if use_softmax else 'sparsemax'}, top-{topk_k}, {n_samples} samples/beat")
+    print(f"  Temp schedule : {temp_start:.1f} → {temperature:.1f} over {temp_warmup_steps} steps")
+    print(f"  Note extension: {note_extension} beats")
     print(f"  Output dir    : {out}")
 
     # ── Step 1: Text → Prefix ──────────────────────────────────────────────
@@ -425,6 +444,8 @@ def run_pipeline(
         use_softmax=use_softmax,
         temp_start=temp_start,
         temp_warmup_steps=temp_warmup_steps,
+        topk_k=topk_k,
+        n_samples=n_samples,
     )
     full_roll = sequence.squeeze(1).detach().cpu().numpy().round()
     full_roll = full_roll[:T_total]
@@ -433,7 +454,7 @@ def run_pipeline(
     # ── Step 4: Export ─────────────────────────────────────────────────────
     print("\n[4/4] Exporting results...")
 
-    midi = piano_roll_to_midi(full_roll, detected_tempo)
+    midi = piano_roll_to_midi(full_roll, detected_tempo, note_extension=note_extension)
     midi_path = out / "generated.mid"
     midi.write(str(midi_path))
     print(f"  Saved MIDI         : {midi_path}")
@@ -555,7 +576,29 @@ def main():
     )
     parser.add_argument(
         "--temp_warmup_steps", type=int, default=30,
-        help="Fix B: число шагов для линейного спада температуры (по умолчанию: 30).",
+        help="Число шагов для линейного спада температуры (по умолчанию: 30).",
+    )
+    parser.add_argument(
+        "--topk_k", type=int, default=50,
+        help=(
+            "Сколько топ-нот рассматривать при сэмплировании (по умолчанию: 50).\n"
+            "Меньше = модель выбирает из своих топ-предсказаний → больше мелодической связности.\n"
+            "Рекомендуется попробовать: 5, 10, 20."
+        ),
+    )
+    parser.add_argument(
+        "--n_samples", type=int, default=3,
+        help=(
+            "Сколько раз сэмплировать на каждый бит (OR → полифония, по умолчанию: 3).\n"
+            "Меньше = меньше нот за бит (более мелодично). Больше = больше нот (аккорды)."
+        ),
+    )
+    parser.add_argument(
+        "--note_extension", type=int, default=0,
+        help=(
+            "Продлить каждую активную ноту на N битов вперёд (по умолчанию: 0).\n"
+            "1–2 = более легато звучание без изменения модели. Рекомендуется попробовать: 1, 2."
+        ),
     )
 
     args = parser.parse_args()
@@ -579,6 +622,9 @@ def main():
         use_softmax=not args.no_softmax,
         temp_start=args.temp_start,
         temp_warmup_steps=args.temp_warmup_steps,
+        topk_k=args.topk_k,
+        n_samples=args.n_samples,
+        note_extension=args.note_extension,
     )
 
 
