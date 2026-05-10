@@ -1,0 +1,140 @@
+Загрузка модели: data/meta_info/trained_transformer_original_less_struct_combined/model_30_epochs.txt
+Тип модели: HierarchicalGenerator
+
+Загрузка датасета для prefix: data/combined/combined_test.pt
+  Доступно prefix-фрагментов: 567
+
+Визуализация примера SSM (первый план)...
+/Users/valeriia.zaborovskaia/Desktop/diploma/sing-learned-structure/SingLS/model/original_attention.py:15: UserWarning: The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4424.)
+  weighted = (prev_sequence.permute(2, 1, 0) * weights).T  # [beat_num, batch, 128]
+  Сохранено: experiments/ssm_following_results/example_ssm_comparison.png
+
+Оценка 100 планов | n_gen_bars=64 | ssm_size=64×64 | prefix=data/combined/combined_test.pt
+------------------------------------------------------------
+  [  1/100] intro:4,verse:16,chorus:8,verse:16,chorus:8,verse:16,chorus:8,verse:12,chorus:8,verse:16,chorus:12,outro:8  (132 bars total)
+  [  2/100] intro:8,verse:12,chorus:12,verse:16,chorus:12,verse:16,chorus:16,bridge:8,verse:16,chorus:8,outro:4  (128 bars total)
+  [  3/100] intro:8,verse:12,chorus:12,bridge:12,verse:12,chorus:12,outro:4  (72 bars total)
+  [  4/100] intro:8,verse:16,chorus:12,verse:12,chorus:8,verse:12,chorus:8,outro:4  (80 bars total)
+  [  5/100] intro:8,verse:12,chorus:12,verse:12,chorus:8,verse:16,chorus:16,bridge:12,verse:16,chorus:12,outro:4  (128 bars total)
+  [  6/100] intro:4,verse:16,chorus:16,verse:16,chorus:16,verse:16,chorus:12,verse:12,chorus:12,outro:8  (128 bars total)
+  [  7/100] intro:4,verse:16,chorus:16,bridge:12,verse:12,chorus:16,verse:16,chorus:12,outro:4  (108 bars total)
+  [  8/100] intro:4,verse:16,chorus:12,verse:12,chorus:16,verse:16,chorus:8,verse:12,chorus:16,verse:12,chorus:16,outro:4  (144 bars total)
+  [  9/100] intro:8,verse:12,chorus:16,verse:16,chorus:16,bridge:12,verse:16,chorus:8,verse:12,chorus:8,outro:8  (132 bars total)
+  [ 10/100] intro:8,verse:16,chorus:12,verse:16,chorus:8,verse:16,chorus:8,outro:4  (88 bars total)
+    [running avg] affinity IOU=0.0284  |  none IOU=0.0291
+  [ 11/100] intro:4,verse:16,chorus:16,verse:16,chorus:8,verse:16,chorus:8,bridge:8,verse:16,chorus:16,verse:16,chorus:16,outro:8  (164 bars total)
+  [ 12/100] intro:8,verse:12,chorus:12,bridge:12,verse:12,chorus:16,outro:8  (80 bars total)
+  [ 13/100] intro:8,verse:16,chorus:8,verse:12,chorus:8,verse:12,chorus:12,verse:12,chorus:8,outro:4  (100 bars total)
+  [ 14/100] intro:8,verse:16,chorus:16,verse:16,chorus:16,verse:16,chorus:16,outro:4  (108 bars total)
+  [ 15/100] intro:8,verse:16,chorus:12,verse:12,chorus:16,verse:16,chorus:8,bridge:8,verse:12,chorus:16,verse:16,chorus:16,outro:8  (164 bars total)
+  [ 16/100] intro:4,verse:16,chorus:8,verse:12,chorus:12,bridge:8,verse:12,chorus:12,outro:4  (88 bars total)
+  [ 17/100] intro:4,verse:12,chorus:8,verse:12,chorus:16,verse:12,chorus:8,bridge:8,verse:16,chorus:8,outro:4  (108 bars total)
+  [ 18/100] intro:8,verse:12,chorus:16,verse:12,chorus:12,outro:4  (64 bars total)
+  [ 19/100] intro:8,verse:12,chorus:12,bridge:12,verse:12,chorus:12,outro:8  (76 bars total)
+  [ 20/100] intro:8,verse:12,chorus:12,verse:12,chorus:16,verse:12,chorus:16,verse:16,chorus:16,verse:12,chorus:8,outro:8  (148 bars total)
+    [running avg] affinity IOU=0.0301  |  none IOU=0.0300
+  [ 21/100] intro:8,verse:12,chorus:12,verse:16,chorus:8,verse:12,chorus:8,verse:12,chorus:12,outro:8  (108 bars total)
+  [ 22/100] intro:8,verse:16,chorus:12,verse:16,chorus:8,verse:12,chorus:16,verse:16,chorus:12,outro:4  (120 bars total)
+  [ 23/100] intro:8,verse:16,chorus:12,verse:16,chorus:16,bridge:12,verse:16,chorus:12,verse:12,chorus:16,outro:8  (144 bars total)
+  [ 24/100] intro:4,verse:12,chorus:8,bridge:12,verse:12,chorus:16,outro:8  (72 bars total)
+  [ 25/100] intro:4,verse:16,chorus:16,verse:16,chorus:16,bridge:12,verse:16,chorus:8,verse:12,chorus:8,outro:8  (132 bars total)
+  [ 26/100] intro:4,verse:16,chorus:16,bridge:12,verse:16,chorus:16,outro:4  (84 bars total)
+  [ 27/100] intro:8,verse:12,chorus:12,verse:16,chorus:12,verse:12,chorus:8,outro:4  (84 bars total)
+  [ 28/100] intro:8,verse:12,chorus:16,verse:12,chorus:16,outro:4  (68 bars total)
+  [ 29/100] intro:8,verse:16,chorus:12,verse:12,chorus:12,bridge:12,verse:12,chorus:8,outro:4  (96 bars total)
+  [ 30/100] intro:4,verse:12,chorus:12,verse:16,chorus:16,verse:16,chorus:12,verse:16,chorus:8,verse:12,chorus:12,outro:8  (144 bars total)
+    [running avg] affinity IOU=0.0293  |  none IOU=0.0299
+  [ 31/100] intro:4,verse:16,chorus:16,verse:16,chorus:8,bridge:8,verse:12,chorus:12,outro:4  (96 bars total)
+  [ 32/100] intro:4,verse:16,chorus:12,verse:12,chorus:8,bridge:12,verse:12,chorus:12,outro:4  (92 bars total)
+  [ 33/100] intro:8,verse:16,chorus:16,bridge:8,verse:12,chorus:12,verse:16,chorus:16,outro:8  (112 bars total)
+  [ 34/100] intro:8,verse:12,chorus:12,verse:12,chorus:12,bridge:12,verse:12,chorus:12,verse:12,chorus:8,outro:8  (120 bars total)
+  [ 35/100] intro:8,verse:12,chorus:12,verse:16,chorus:16,verse:16,chorus:8,bridge:8,verse:12,chorus:16,outro:4  (128 bars total)
+  [ 36/100] intro:8,verse:12,chorus:8,verse:12,chorus:8,bridge:8,verse:12,chorus:8,outro:8  (84 bars total)
+  [ 37/100] intro:8,verse:16,chorus:16,verse:16,chorus:16,verse:16,chorus:8,bridge:12,verse:16,chorus:12,verse:12,chorus:12,outro:4  (164 bars total)
+  [ 38/100] intro:8,verse:16,chorus:8,verse:12,chorus:12,verse:12,chorus:16,outro:8  (92 bars total)
+  [ 39/100] intro:8,verse:12,chorus:12,verse:12,chorus:12,verse:16,chorus:16,bridge:8,verse:12,chorus:12,verse:12,chorus:16,outro:4  (152 bars total)
+  [ 40/100] intro:4,verse:16,chorus:12,verse:16,chorus:12,outro:8  (68 bars total)
+    [running avg] affinity IOU=0.0306  |  none IOU=0.0311
+  [ 41/100] intro:8,verse:16,chorus:16,verse:12,chorus:16,verse:16,chorus:8,outro:8  (100 bars total)
+  [ 42/100] intro:8,verse:12,chorus:12,verse:12,chorus:16,verse:16,chorus:16,verse:16,chorus:8,outro:4  (120 bars total)
+  [ 43/100] intro:8,verse:16,chorus:16,verse:16,chorus:8,verse:12,chorus:16,verse:12,chorus:12,verse:16,chorus:8,outro:4  (144 bars total)
+  [ 44/100] intro:8,verse:12,chorus:8,verse:12,chorus:8,bridge:8,verse:16,chorus:16,outro:4  (92 bars total)
+  [ 45/100] intro:8,verse:12,chorus:8,verse:16,chorus:8,outro:8  (60 bars total)
+  [ 46/100] intro:8,verse:12,chorus:12,verse:16,chorus:16,verse:16,chorus:8,verse:16,chorus:8,verse:16,chorus:16,outro:8  (152 bars total)
+  [ 47/100] intro:8,verse:16,chorus:16,verse:16,chorus:8,verse:16,chorus:8,outro:8  (96 bars total)
+  [ 48/100] intro:8,verse:12,chorus:16,verse:12,chorus:12,verse:12,chorus:8,bridge:8,verse:12,chorus:8,verse:16,chorus:12,outro:4  (140 bars total)
+  [ 49/100] intro:8,verse:16,chorus:16,bridge:12,verse:16,chorus:8,outro:4  (80 bars total)
+  [ 50/100] intro:8,verse:16,chorus:8,bridge:12,verse:12,chorus:16,verse:16,chorus:12,outro:4  (104 bars total)
+    [running avg] affinity IOU=0.0305  |  none IOU=0.0311
+  [ 51/100] intro:4,verse:16,chorus:8,verse:12,chorus:12,verse:12,chorus:12,outro:4  (80 bars total)
+  [ 52/100] intro:4,verse:16,chorus:16,verse:12,chorus:8,verse:16,chorus:16,outro:4  (92 bars total)
+  [ 53/100] intro:4,verse:12,chorus:12,verse:16,chorus:8,verse:16,chorus:8,verse:12,chorus:16,outro:8  (112 bars total)
+  [ 54/100] intro:4,verse:12,chorus:12,verse:16,chorus:8,verse:16,chorus:12,bridge:8,verse:12,chorus:12,verse:12,chorus:16,outro:4  (144 bars total)
+  [ 55/100] intro:8,verse:12,chorus:12,verse:16,chorus:16,outro:8  (72 bars total)
+  [ 56/100] intro:4,verse:12,chorus:16,verse:12,chorus:12,verse:12,chorus:8,outro:4  (80 bars total)
+  [ 57/100] intro:4,verse:16,chorus:16,verse:16,chorus:16,bridge:8,verse:16,chorus:12,outro:4  (108 bars total)
+  [ 58/100] intro:8,verse:12,chorus:12,verse:16,chorus:12,verse:16,chorus:8,verse:16,chorus:16,outro:8  (124 bars total)
+  [ 59/100] intro:8,verse:16,chorus:8,verse:16,chorus:8,verse:16,chorus:16,verse:16,chorus:12,outro:4  (120 bars total)
+  [ 60/100] intro:4,verse:16,chorus:12,verse:16,chorus:16,verse:16,chorus:12,outro:8  (100 bars total)
+    [running avg] affinity IOU=0.0298  |  none IOU=0.0305
+  [ 61/100] intro:4,verse:16,chorus:16,verse:16,chorus:12,verse:12,chorus:8,verse:16,chorus:16,verse:12,chorus:8,outro:4  (140 bars total)
+  [ 62/100] intro:8,verse:12,chorus:8,bridge:12,verse:16,chorus:16,verse:12,chorus:16,outro:4  (104 bars total)
+  [ 63/100] intro:8,verse:16,chorus:12,verse:12,chorus:16,bridge:12,verse:16,chorus:16,verse:16,chorus:8,outro:4  (136 bars total)
+  [ 64/100] intro:4,verse:12,chorus:12,verse:16,chorus:16,verse:12,chorus:12,verse:12,chorus:16,verse:16,chorus:16,outro:8  (152 bars total)
+  [ 65/100] intro:4,verse:12,chorus:8,bridge:12,verse:16,chorus:16,outro:8  (76 bars total)
+  [ 66/100] intro:4,verse:16,chorus:12,verse:12,chorus:16,verse:12,chorus:12,verse:12,chorus:8,outro:4  (108 bars total)
+  [ 67/100] intro:8,verse:16,chorus:16,verse:12,chorus:16,verse:12,chorus:8,outro:8  (96 bars total)
+  [ 68/100] intro:8,verse:16,chorus:16,verse:16,chorus:12,verse:12,chorus:8,verse:16,chorus:12,outro:8  (124 bars total)
+  [ 69/100] intro:4,verse:12,chorus:8,verse:16,chorus:16,verse:12,chorus:8,verse:12,chorus:8,verse:16,chorus:16,outro:4  (132 bars total)
+  [ 70/100] intro:8,verse:16,chorus:8,verse:16,chorus:8,verse:16,chorus:8,verse:12,chorus:16,outro:4  (112 bars total)
+    [running avg] affinity IOU=0.0299  |  none IOU=0.0298
+  [ 71/100] intro:4,verse:16,chorus:16,verse:12,chorus:8,verse:12,chorus:8,verse:12,chorus:16,verse:16,chorus:16,outro:4  (140 bars total)
+  [ 72/100] intro:8,verse:16,chorus:16,verse:16,chorus:12,verse:12,chorus:16,bridge:12,verse:12,chorus:8,outro:8  (136 bars total)
+  [ 73/100] intro:8,verse:16,chorus:8,verse:16,chorus:16,bridge:12,verse:16,chorus:8,verse:16,chorus:16,outro:4  (136 bars total)
+  [ 74/100] intro:8,verse:16,chorus:8,bridge:8,verse:12,chorus:8,outro:8  (68 bars total)
+  [ 75/100] intro:8,verse:16,chorus:8,verse:12,chorus:12,verse:16,chorus:8,verse:16,chorus:12,verse:16,chorus:12,outro:4  (140 bars total)
+  [ 76/100] intro:4,verse:16,chorus:8,verse:12,chorus:16,bridge:8,verse:16,chorus:16,verse:16,chorus:12,outro:4  (128 bars total)
+  [ 77/100] intro:4,verse:12,chorus:12,verse:16,chorus:12,bridge:12,verse:12,chorus:12,outro:8  (100 bars total)
+  [ 78/100] intro:4,verse:16,chorus:16,verse:16,chorus:16,verse:12,chorus:8,outro:8  (96 bars total)
+  [ 79/100] intro:8,verse:16,chorus:8,verse:12,chorus:16,verse:12,chorus:8,outro:4  (84 bars total)
+  [ 80/100] intro:8,verse:16,chorus:8,verse:12,chorus:12,verse:12,chorus:12,verse:16,chorus:16,outro:8  (120 bars total)
+    [running avg] affinity IOU=0.0300  |  none IOU=0.0297
+  [ 81/100] intro:8,verse:16,chorus:12,verse:12,chorus:12,verse:16,chorus:16,bridge:12,verse:12,chorus:16,verse:16,chorus:12,outro:4  (164 bars total)
+  [ 82/100] intro:4,verse:16,chorus:8,verse:16,chorus:8,verse:12,chorus:8,verse:12,chorus:8,outro:8  (100 bars total)
+  [ 83/100] intro:8,verse:12,chorus:12,verse:12,chorus:12,verse:12,chorus:16,verse:12,chorus:16,outro:4  (116 bars total)
+  [ 84/100] intro:8,verse:16,chorus:16,verse:16,chorus:12,verse:12,chorus:12,verse:16,chorus:16,verse:16,chorus:16,outro:8  (164 bars total)
+  [ 85/100] intro:4,verse:16,chorus:16,bridge:12,verse:12,chorus:16,verse:16,chorus:12,outro:8  (112 bars total)
+  [ 86/100] intro:8,verse:16,chorus:12,verse:12,chorus:16,verse:16,chorus:12,verse:16,chorus:8,outro:8  (124 bars total)
+  [ 87/100] intro:4,verse:16,chorus:16,verse:16,chorus:16,bridge:8,verse:16,chorus:8,verse:12,chorus:16,outro:4  (132 bars total)
+  [ 88/100] intro:4,verse:12,chorus:16,bridge:8,verse:16,chorus:16,verse:16,chorus:8,outro:4  (100 bars total)
+  [ 89/100] intro:4,verse:12,chorus:12,verse:16,chorus:12,verse:12,chorus:12,bridge:8,verse:12,chorus:16,outro:4  (120 bars total)
+  [ 90/100] intro:4,verse:12,chorus:8,verse:16,chorus:12,bridge:12,verse:12,chorus:12,outro:4  (92 bars total)
+    [running avg] affinity IOU=0.0300  |  none IOU=0.0299
+  [ 91/100] intro:8,verse:16,chorus:16,verse:16,chorus:8,verse:16,chorus:8,verse:12,chorus:12,outro:4  (116 bars total)
+  [ 92/100] intro:8,verse:16,chorus:16,verse:12,chorus:8,verse:16,chorus:12,verse:12,chorus:16,outro:8  (124 bars total)
+  [ 93/100] intro:8,verse:16,chorus:8,verse:16,chorus:16,verse:12,chorus:8,verse:16,chorus:8,verse:12,chorus:12,outro:8  (140 bars total)
+  [ 94/100] intro:4,verse:16,chorus:12,verse:16,chorus:16,verse:16,chorus:16,outro:8  (104 bars total)
+  [ 95/100] intro:4,verse:12,chorus:12,bridge:12,verse:12,chorus:16,verse:16,chorus:12,outro:4  (100 bars total)
+  [ 96/100] intro:4,verse:16,chorus:8,bridge:12,verse:16,chorus:16,verse:12,chorus:8,outro:4  (96 bars total)
+  [ 97/100] intro:8,verse:16,chorus:8,verse:12,chorus:8,verse:12,chorus:16,verse:16,chorus:16,outro:8  (120 bars total)
+  [ 98/100] intro:4,verse:12,chorus:16,verse:16,chorus:8,verse:16,chorus:8,bridge:12,verse:12,chorus:16,verse:16,chorus:16,outro:8  (160 bars total)
+  [ 99/100] intro:4,verse:16,chorus:8,verse:12,chorus:16,bridge:12,verse:12,chorus:16,verse:12,chorus:8,outro:8  (124 bars total)
+  [100/100] intro:4,verse:16,chorus:8,verse:12,chorus:16,verse:16,chorus:12,verse:16,chorus:12,outro:8  (120 bars total)
+    [running avg] affinity IOU=0.0298  |  none IOU=0.0296
+
+=================================================================
+SSM-Following Rate — Итог
+N=100 планов | n_gen_bars=64 | ssm_size=64
+=================================================================
+     Условие           IOU ↑           MSE ↓  NotesDensity
+-----------------------------------------------------------------
+    affinity  0.0298 ± 0.0074  0.2947 ± 0.0423  0.0230
+        none  0.0296 ± 0.0068  0.2923 ± 0.0425  0.0230
+=================================================================
+
+  ΔIOU (affinity − none) = +0.0002  ✓ affinity лучше
+  ΔMSE (affinity − none) = +0.0024  ✗ нет улучшения
+
+Данные сохранены: experiments/ssm_following_results/ssm_following_results.npz
+Гистограммы   : experiments/ssm_following_results/ssm_following_histogram.png
+Пример SSM    : experiments/ssm_following_results/example_ssm_comparison.png

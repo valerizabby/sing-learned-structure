@@ -1,0 +1,45 @@
+SSM-Following Statistical Report
+Generated: 2026-05-10
+Source:    experiments/ssm_following_results/ssm_following_results.npz
+N=100 paired observations (same segment plan + prefix, two SSM conditions)
+
+============================================================
+IOU ↑  (higher is better for affinity)
+============================================================
+  affinity : 0.0329 ± 0.0079
+  none     : 0.0280 ± 0.0081
+  ΔIOU     : +0.0049
+  Paired t-test : t=4.463, p<0.0001 ***
+  Wilcoxon      : W=1176,  p<0.0001 ***
+  Cohen's d     : 0.449
+  95% CI ΔIOU   : [+0.0027, +0.0071]
+  Pairs affinity>none: 73/100
+
+============================================================
+MSE ↓  (lower is better for affinity)
+============================================================
+  affinity : 0.2877 ± 0.0415
+  none     : 0.2934 ± 0.0413
+  ΔMSE     : -0.0057
+  Paired t-test : t=-5.809, p<0.0001 ***
+  Wilcoxon      : W=1045,  p<0.0001 ***
+  Cohen's d     : -0.584
+  95% CI ΔMSE   : [-0.0076, -0.0037]
+  Pairs affinity<none: 73/100
+
+============================================================
+LaTeX table snippet
+============================================================
+\begin{tabular}{lcccc}
+\hline
+Condition & IOU $\uparrow$ & MSE $\downarrow$ \\
+\hline
+affinity & 0.0329$\pm$0.0079 & 0.2877$\pm$0.0415 \\
+none     & 0.0280$\pm$0.0081 & 0.2934$\pm$0.0413 \\
+\hline
+$\Delta$ & +0.0049 & -0.0057 \\
+paired $t$ & 4.46 & -5.81 \\
+$p$ & p<0.0001 & p<0.0001 \\
+Cohen $d$ & 0.449 & -0.584 \\
+\hline
+\end{tabular}
