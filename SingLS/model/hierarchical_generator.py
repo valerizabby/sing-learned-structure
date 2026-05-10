@@ -19,7 +19,10 @@ class HierarchicalGenerator(nn.Module):
         if self.structure_model is None:
             return attn_out, hidden
 
-        T = lstm_out.shape[0]
+        # Используем длину контекста (prev_sequence), а не длину шага LSTM (T=1
+        # при авторегрессии). Иначе build_ssm_batch всегда берёт top-left 1×1
+        # угол SSM, что бессмысленно.
+        T = max(lstm_out.shape[0], prev_sequence.shape[0])
         ssm_batch = build_ssm_batch(
             output_len=T,
             batch_size=batch_size,
@@ -27,7 +30,10 @@ class HierarchicalGenerator(nn.Module):
             device=lstm_out.device
         )
 
-        struct = self.structure_model(ssm_batch)
+        struct = self.structure_model(ssm_batch)   # [T, B, H]
+        # Align struct to lstm_out: T = max(lstm_T, prev_T) >= lstm_T,
+        # so we take the last lstm_T rows (positionally correct for warmup).
+        struct = struct[-lstm_out.shape[0]:]       # [lstm_T, B, H]
         mixed = lstm_out + self.alpha * struct
 
         attn_out2 = self.generator._apply_attention(mixed, prev_sequence, batched_ssm)

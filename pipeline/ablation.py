@@ -266,8 +266,8 @@ def run_ablation(
         sequence = generate_from_prefix(model, prefix_roll, ssm, T_gen, warmup_beats=4)
         full_roll = sequence.squeeze(1).detach().cpu().numpy().round()[:T_total]
 
-        # MIDI
-        midi = piano_roll_to_midi(full_roll, detected_tempo)
+        # MIDI (только сгенерированная часть, без prefix)
+        midi = piano_roll_to_midi(full_roll[T_prefix:], detected_tempo)
         midi.write(str(cond_dir / "generated.mid"))
         print(f"  Saved: {cond_dir / 'generated.mid'}")
 

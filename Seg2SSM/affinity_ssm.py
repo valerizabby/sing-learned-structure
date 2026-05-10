@@ -87,27 +87,54 @@ class AffinitySSM:
 
     A[a, b] = сходство между барами с метками a и b.
     Матрица симметричная, диагональ = 1.0.
+
+    Параметры постобработки (по умолчанию настроены на реалистичный режим):
+      smooth_sigma  — Gaussian blur на границах блоков (σ=1.5 ≈ 1 такт).
+      noise_std     — внутриблочный шум N(0, σ): имитирует вариацию chroma внутри секции.
+      rescale       — если True, линейно растягивает значения под целевое распределение
+                      chroma-SSM (target_mean=0.50, target_std=0.13).
+
+    Обоснование:
+      Модель обучена на chroma-SSM с косинусным сходством нормированных chroma-векторов.
+      Типичное распределение: mean≈0.50, std≈0.13, плавные переходы.
+      AffinitySSM без постобработки даёт ступенчатую матрицу с другим распределением,
+      поэтому модель «не узнаёт» формат → внимание работает неоптимально.
+      Постобработка приближает AffinitySSM к обучающему распределению без изменения
+      блочной структуры (которая кодирует музыкальный план пользователя).
     """
 
+    # Параметры целевого распределения, оценённые из датасета combined.
+    # Chroma-SSM (cosine similarity нормированных chroma): mean≈0.50, std≈0.13.
+    TARGET_MEAN = 0.50
+    TARGET_STD  = 0.13
+
     def __init__(self, A: torch.Tensor, label_names: dict = None,
-                 smooth_sigma: float = 1.5):
+                 smooth_sigma: float = 1.5,
+                 noise_std: float = 0.04,
+                 rescale: bool = True):
         assert A.shape == (N_LABELS, N_LABELS), f"A должна быть {N_LABELS}×{N_LABELS}"
         self.A = A.float()
         self.label_names = label_names or LABEL_NAMES
         self.smooth_sigma = smooth_sigma
+        self.noise_std = noise_std
+        self.rescale = rescale
 
     @classmethod
-    def fixed(cls, smooth_sigma: float = 1.5) -> "AffinitySSM":
+    def fixed(cls, smooth_sigma: float = 1.5,
+              noise_std: float = 0.04,
+              rescale: bool = True) -> "AffinitySSM":
         """Создаёт AffinitySSM с теоретически заданной матрицей A."""
         A = torch.tensor(A_FIXED_VALUES, dtype=torch.float32)
-        return cls(A, smooth_sigma=smooth_sigma)
+        return cls(A, smooth_sigma=smooth_sigma, noise_std=noise_std, rescale=rescale)
 
     @classmethod
-    def from_checkpoint(cls, path: str, smooth_sigma: float = 1.5) -> "AffinitySSM":
+    def from_checkpoint(cls, path: str, smooth_sigma: float = 1.5,
+                        noise_std: float = 0.04,
+                        rescale: bool = True) -> "AffinitySSM":
         """Загружает эмпирически оценённую матрицу A из файла."""
         ckpt = torch.load(path, weights_only=True)
         return cls(ckpt["A"], label_names=ckpt.get("label_names", LABEL_NAMES),
-                   smooth_sigma=smooth_sigma)
+                   smooth_sigma=smooth_sigma, noise_std=noise_std, rescale=rescale)
 
     def _build_bar_labels(self, segment_plan: List[Tuple[int, int]]) -> torch.Tensor:
         """
@@ -127,13 +154,48 @@ class AffinitySSM:
         """
         Строит SSM [ssm_size, ssm_size] по сегментному плану.
 
+        Постобработка (опционально):
+          1. Gaussian smoothing — сглаживает резкие блочные границы.
+          2. Внутриблочный шум — добавляет вариацию N(0, noise_std) внутри блоков,
+             имитируя естественную вариабельность chroma-признаков внутри секции.
+             Шум симметричен (верхний треугольник → нижний), диагональ = 1.0.
+          3. Rescale — линейно растягивает значения под распределение реальной
+             chroma-SSM (target_mean, target_std), сохраняя порядок значений.
+
         segment_plan: [(label_id, duration_bars), ...]
         """
         bar_labels = self._build_bar_labels(segment_plan)   # [T]
         ssm = self.A[bar_labels][:, bar_labels]             # [T, T]
 
+        # 1. Gaussian smoothing
         if self.smooth_sigma > 0:
             ssm = _gaussian_blur_2d(ssm, self.smooth_sigma)
+
+        # 2. Внутриблочный шум: симметричный, диагональ не трогаем
+        if self.noise_std > 0:
+            T = ssm.shape[0]
+            noise = torch.randn(T, T) * self.noise_std
+            # Симметризуем шум (SSM должна быть симметричной)
+            noise = (noise + noise.T) / 2.0
+            ssm = ssm + noise
+            ssm.fill_diagonal_(1.0)
+            ssm = ssm.clamp(0.0, 1.0)
+
+        # 3. Rescale под целевое распределение chroma-SSM
+        if self.rescale:
+            # Работаем только с off-diagonal элементами
+            diag_mask = ~torch.eye(ssm.shape[0], dtype=torch.bool)
+            off = ssm[diag_mask]
+            src_mean = off.mean()
+            src_std  = off.std().clamp(min=1e-6)
+            # Линейное масштабирование: z-score → целевое распределение
+            ssm_rescaled = ssm.clone()
+            ssm_rescaled[diag_mask] = (
+                (off - src_mean) / src_std * self.TARGET_STD + self.TARGET_MEAN
+            )
+            ssm_rescaled[diag_mask] = ssm_rescaled[diag_mask].clamp(0.0, 1.0)
+            ssm_rescaled.fill_diagonal_(1.0)
+            ssm = ssm_rescaled
 
         return _resize_ssm(ssm, ssm_size)                   # [ssm_size, ssm_size]
 
@@ -157,5 +219,12 @@ if __name__ == "__main__":
 
     plan = [(0, 8), (1, 16), (2, 16), (1, 16), (2, 16), (5, 8)]  # intro+verse+chorus...
     ssm = builder.build(plan, ssm_size=64)
-    print(f"\nSSM shape: {ssm.shape}, mean: {ssm.mean():.3f}, "
-          f"min: {ssm.min():.3f}, max: {ssm.max():.3f}")
+    print(f"\n[realistic] SSM shape: {ssm.shape}")
+    print(f"  mean={ssm.mean():.3f}, std={ssm.std():.3f}, "
+          f"min={ssm.min():.3f}, max={ssm.max():.3f}")
+    print(f"  (target: mean≈{AffinitySSM.TARGET_MEAN}, std≈{AffinitySSM.TARGET_STD})")
+
+    ssm_raw = AffinitySSM.fixed(noise_std=0.0, rescale=False).build(plan, ssm_size=64)
+    print(f"\n[raw]       SSM shape: {ssm_raw.shape}")
+    print(f"  mean={ssm_raw.mean():.3f}, std={ssm_raw.std():.3f}, "
+          f"min={ssm_raw.min():.3f}, max={ssm_raw.max():.3f}")

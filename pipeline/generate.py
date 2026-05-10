@@ -183,12 +183,15 @@ def generate_from_prefix(
     # Начальная sequence для авторегрессии.
     # Важно: sequence не может быть пустой — sparsemax в original_attention
     # упадёт на пустом срезе SSM (IndexError: max() on empty tensor).
-    # При prefix_in_sequence=False берём только последний фрейм prefix —
-    # минимальное OOD-загрязнение, но attention получает хотя бы 1 фрейм.
+    #
+    # Alignment fix: при prefix_in_sequence=False заполняем sequence нулями
+    # длиной T_prefix, чтобы beat_num в original_attention стартовал с T_prefix
+    # (а не с 1). Это гарантирует, что SSM-ряды при генерации соответствуют
+    # генерируемой части трека, а не intro-региону. Контент нулевой — без OOD.
     if prefix_in_sequence:
         sequence = prefix_t                     # [T_prefix, 1, 128]
     else:
-        sequence = prefix_t[-1:]                # [1, 1, 128] — один последний фрейм
+        sequence = torch.zeros_like(prefix_t)   # [T_prefix, 1, 128] — нули, нет OOD
 
     max_notes = batched_ssm.shape[0] - prefix_t.shape[0]
     steps = min(gen_len, max_notes)
@@ -214,12 +217,14 @@ def generate_from_prefix(
         sequence = torch.vstack((sequence, next_element.to(DEVICE)))
 
     # Собираем полный sequence для визуализации.
-    # При prefix_in_sequence=False: sequence = [last_prefix_frame] + [generated].
-    # Добавляем оставшиеся prefix-фреймы спереди для корректного отображения.
+    # При prefix_in_sequence=False: sequence = [T_prefix нулей] + [generated steps].
+    # Заменяем нулевую часть реальным prefix для корректного отображения.
     if prefix_in_sequence:
         full_sequence = sequence
     else:
-        full_sequence = torch.vstack((prefix_t[:-1], sequence))  # [T_prefix + steps, 1, 128]
+        # sequence = [zeros(T_prefix), step_0, ..., step_{n-1}]
+        # → заменяем нулевую часть реальным prefix
+        full_sequence = torch.vstack((prefix_t, sequence[prefix_t.shape[0]:]))  # [T_prefix + steps, 1, 128]
     return full_sequence
 
 
@@ -454,10 +459,10 @@ def run_pipeline(
     # ── Step 4: Export ─────────────────────────────────────────────────────
     print("\n[4/4] Exporting results...")
 
-    midi = piano_roll_to_midi(full_roll, detected_tempo, note_extension=note_extension)
+    midi = piano_roll_to_midi(full_roll[T_prefix:], detected_tempo, note_extension=note_extension)
     midi_path = out / "generated.mid"
     midi.write(str(midi_path))
-    print(f"  Saved MIDI         : {midi_path}")
+    print(f"  Saved MIDI         : {midi_path}  (generated only, {full_roll.shape[0] - T_prefix} beats)")
 
     prefix_midi = piano_roll_to_midi(prefix_roll.numpy(), detected_tempo)
     prefix_midi.write(str(out / "prefix.mid"))

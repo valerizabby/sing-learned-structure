@@ -41,7 +41,7 @@ python -m pipeline.generate \
 > В примере: 4+8+8+8+8+4 = 40 ≈ 8+32. ✓
 
 **Результаты** сохранятся в `outputs/my_run/`:
-- `generated.mid` — полный MIDI-трек (prefix + generated)
+- `generated.mid` — только сгенерированная часть (без prefix)
 - `prefix.mid` — только prefix (для сравнения)
 - `prefix_roll.pt` — сохранённый prefix (для переиспользования)
 - `pipeline_overview.png` — 3 панели: prefix piano roll | full piano roll | SSM heatmap
@@ -203,11 +203,6 @@ python -m pipeline.generate \
   в сгенерированном треке. Нужна метрика или визуализация сравнения SSM-цели и SSM,
   вычисленной из сгенерированного piano roll.
 
-- [ ] **Убрать prefix из итогового MIDI-трека:** сейчас `generated.mid` содержит
-  prefix + сгенерированную часть. Для демо правильнее отдавать только то, что модель
-  нагенерировала сама (без text2midi prefix), чтобы трек был монородным.
-  Технически: в `run_pipeline` сохранять в MIDI только `full_roll[T_prefix:]`
-  и обновить визуализацию соответственно.
 
 ---
 

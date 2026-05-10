@@ -170,6 +170,21 @@ seq = torch.distributions.Categorical(softmax((vals / 1.5).float()))
 - Prefix пускать только через LSTM (warmup), но **не** добавлять в `sequence`
 - Тогда attention видит только сгенерированные in-distribution ноты
 
+> **[РЕАЛИЗОВАНО 2026-04-29 — alignment fix]**
+> Обнаружен баг: sequence инициализировалась как `prefix_t[-1:]` (длина 1), из-за чего
+> `original_attention` читал SSM ряды 1, 2, 3... вместо T_prefix, T_prefix+1, ...
+> Структурные блоки SSM (verse/chorus) начинаются с ряда T_prefix, но модель
+> смотрела на intro-регион всё время генерации → affinity SSM не отличалась от none.
+> **Фикс**: `sequence = torch.zeros_like(prefix_t)` — нулевые фреймы длиной T_prefix,
+> без OOD-контента, но с правильной SSM-индексацией.
+
+> **[РЕАЛИЗОВАНО 2026-04-29 — StructureModel fix]**
+> Второй баг в `HierarchicalGenerator`: `build_ssm_batch(T=lstm_out.shape[0]=1, ...)` 
+> → всегда извлекал SSM[0:1, 0:1] = 1.0 (диагональный элемент) — константа.
+> `StructureModel` не получал никакой структурной информации при инференсе.
+> **Фикс**: `T = max(lstm_out.shape[0], prev_sequence.shape[0])`.
+
+
 ### Fix 3: Warm start из обучающих данных
 Вместо Text2Prefix → взять случайный кусок из `data/combined/combined_test.pt` как prefix.
 Это гарантирует in-distribution hidden state и `prev_sequence`.

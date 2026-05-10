@@ -50,16 +50,42 @@ A[a, b] = mean( GT_SSM[i,j] )
 ## Построение SSM
 
 ```python
-def build_affinity_ssm(segment_plan, A, T, ssm_size=64, smooth_sigma=1.0):
+def build_affinity_ssm(segment_plan, A, T, ssm_size=64, smooth_sigma=1.5,
+                       noise_std=0.04, rescale=True):
     bar_labels = build_bar_labels(segment_plan, T)  # [T]
     ssm = A[bar_labels][:, bar_labels]              # [T, T]
     if smooth_sigma > 0:
-        ssm = gaussian_blur(ssm, sigma=smooth_sigma) # сглаживаем границы
-    return resize_ssm(ssm, ssm_size)                 # [64, 64]
+        ssm = gaussian_blur(ssm, sigma=smooth_sigma) # сглаживаем границы блоков
+    if noise_std > 0:
+        noise = randn(T, T) * noise_std
+        ssm += symmetrize(noise)                    # внутриблочная вариация
+        ssm.diagonal = 1.0; ssm.clamp(0, 1)
+    if rescale:
+        ssm = linear_rescale(ssm,                   # под распределение chroma-SSM
+                             target_mean=0.50,
+                             target_std=0.13)
+    return resize_ssm(ssm, ssm_size)                 # [ssm_size, ssm_size]
 ```
 
-Gaussian smoothing на границах блоков отражает музыкальную реальность:
-переходы между секциями не абруптные.
+### Зачем постобработка?
+
+Модель **обучена на chroma-SSM**: cosine similarity нормированных chroma-векторов.
+Типичное распределение: mean≈0.50, std≈0.13, плавные переходы.
+
+AffinitySSM без постобработки (`rescale=False, noise_std=0`):
+- mean≈0.70, std≈0.22 — другое распределение
+- Ступенчатые границы блоков — нереалистичная текстура
+- Только 3–4 дискретных значения во всей матрице
+
+После постобработки:
+- mean≈0.50, std≈0.13 ✓ — совпадает с обучающим распределением
+- Сглаженные границы (Gaussian blur σ=1.5 ≈ 1 такт)
+- Вариация внутри блоков (noise_std=0.04) — имитирует естественную вариабельность chroma
+
+Структурный паттерн (verse≈chorus, bridge контрастирует) **сохраняется** — 
+rescale — это линейное масштабирование, не уничтожающее порядок значений.
+
+
 
 ## План реализации
 
