@@ -17,9 +17,6 @@ class StructureModel(nn.Module):
         struct = self.proj(struct)                 # [B, T, H]
         return struct.transpose(0, 1)              # [T, B, H]
 
-import torch
-import torch.nn as nn
-
 
 class StructureTransformer(nn.Module):
     """

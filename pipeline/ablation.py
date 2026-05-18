@@ -94,18 +94,11 @@ def load_gt_reference_ssm(T_total: int, n_tracks: int = GT_N_TRACKS) -> np.ndarr
 
 
 def compute_ssm_from_roll(roll: np.ndarray) -> np.ndarray:
-    """
-    Вычисляет chroma-SSM из piano roll [T, 128].
-
-    Повторяет логику SingLS/trainer/data_utils.py::SSM().
-    """
-    T = roll.shape[0]
-    chroma = np.zeros((T, 12), dtype=np.float32)
-    for note in range(12):
-        chroma[:, note] = roll[:, note::12].sum(axis=1)
-    norms = np.linalg.norm(chroma, axis=1, keepdims=True)
-    chroma = chroma / (norms + 1e-8)
-    return chroma @ chroma.T   # [T, T]
+    """Chroma-SSM из piano roll [T, 128]. Делегирует в SingLS/trainer/data_utils.SSM."""
+    import torch as _torch
+    from SingLS.trainer.data_utils import SSM as _SSM
+    tensor = _torch.tensor(roll, dtype=_torch.float32)
+    return _SSM(tensor).numpy()
 
 
 def iou_ssm(ssm1: np.ndarray, ssm2: np.ndarray, threshold: float = 0.5) -> float:

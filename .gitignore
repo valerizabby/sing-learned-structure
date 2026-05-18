@@ -20,6 +20,9 @@ venv/
 __pycache__/
 *.pyc
 
+# Claude Code local settings
+.claude/settings.json
+
 # Downloaded media
 *.mp4
 *.mp4.part

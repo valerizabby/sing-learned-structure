@@ -18,6 +18,7 @@ class MusicGenerator(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.hidden = None
 
+        # attention_layer and sparsemax are used by ORIGINAL attention mode
         self.attention = nn.Linear(2, 1)
         self.softmax = sparsemax.Sparsemax(dim=1)
 
