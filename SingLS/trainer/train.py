@@ -10,7 +10,7 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 
-from SingLS.config.config import EXP_PATH, DEVICE
+from SingLS.config.config import EXP_PATH, DEVICE, BETA_STRUCT, WARMUP_UNFREEZE_EPOCH, STARTER_NOTES
 from SingLS.model.utils import freeze_structure, unfreeze_structure
 from SingLS.trainer.data_utils import (
     batch_SSM,
@@ -94,10 +94,8 @@ class ModelTrainer:
         self.data = data
         self.data_length = data[0][0].shape[0]
 
-        # struct loss weight
-        self.beta_struct = 0.03
+        self.beta_struct = BETA_STRUCT
 
-        # будет установлен в train_epochs
         self._csv_path = None   # type: Optional[str]
         self._json_path = None  # type: Optional[str]
         self._run_meta: dict = {}
@@ -223,7 +221,7 @@ class ModelTrainer:
             freeze_structure(self.generator)
 
             for epoch in tqdm(range(num_epochs), desc="Epochs", dynamic_ncols=True):
-                if epoch == 5:
+                if epoch == WARMUP_UNFREEZE_EPOCH:
                     unfreeze_structure(self.generator)
 
                 self.generator.train()
@@ -288,7 +286,7 @@ class ModelTrainer:
                 torch.save(self.generator, path)
                 logging.info(f"Checkpoint → {path}")
 
-                snap = self.generate_n_examples(n=1, length=95, starter_notes=10)
+                snap = self.generate_n_examples(n=1, length=95, starter_notes=STARTER_NOTES)
                 piclist.append(snap)
 
         except Exception:

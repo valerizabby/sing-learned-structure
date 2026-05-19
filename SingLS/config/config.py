@@ -19,6 +19,10 @@ output_size = 128
 lr = 0.001
 struct_lr = 0.0001
 
+BETA_STRUCT = 0.03
+WARMUP_UNFREEZE_EPOCH = 5
+STARTER_NOTES = 10
+
 class AttentionType(Enum):
     NONE = "none"
     ORIGINAL = "original"

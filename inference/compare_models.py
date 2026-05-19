@@ -9,35 +9,12 @@ import pretty_midi
 from SingLS.config.config import AttentionType, DEVICE, EXP_PATH, lr, hidden_size
 from SingLS.model.model import MusicGenerator
 from SingLS.trainer.train import ModelTrainer
-from SingLS.trainer.data_utils import get_chroma
-
-
-def piano_roll_to_midi(piano_roll, fs=100, program=0):
-    midi = pretty_midi.PrettyMIDI()
-    instrument = pretty_midi.Instrument(program=program)
-    piano_roll = piano_roll.T  # [128, T]
-    notes, frames = piano_roll.shape
-    velocity = 100
-
-    for note in range(notes):
-        on = None
-        for t in range(frames):
-            if piano_roll[note, t] > 0 and on is None:
-                on = t
-            elif piano_roll[note, t] == 0 and on is not None:
-                start = on / fs
-                end = t / fs
-                instrument.notes.append(pretty_midi.Note(velocity, note, start, end))
-                on = None
-        if on is not None:
-            instrument.notes.append(pretty_midi.Note(velocity, note, on / fs, frames / fs))
-
-    midi.instruments.append(instrument)
-    return midi
+from SingLS.trainer.data_utils import SSM as _ssm_fn, get_chroma
+from pipeline.generate import piano_roll_to_midi
 
 
 def compute_ssm(sequence, block_size=4):
-    chroma = get_chroma(torch.tensor(sequence, dtype=torch.float32), sequence.shape[0])  # [T, 12]
+    chroma = get_chroma(torch.tensor(sequence, dtype=torch.float32), sequence.shape[0])
     chroma = chroma / (chroma.norm(dim=1, keepdim=True) + 1e-8)
     ssm = torch.matmul(chroma, chroma.T).cpu().numpy()
 
@@ -150,97 +127,13 @@ def evaluate_piano_roll(piano_roll, reference_ssm=None, block_size=4):
     }
 
 
-def compare_models(model_path,
-                   data_path,
-                   attention_type_=AttentionType.ORIGINAL,
-                   _len_=95
-                   ):
-    data = torch.load(data_path, weights_only=False)
-
-    model = MusicGenerator(128, 128, attention_type=attention_type_).to(DEVICE)
-    model.load_state_dict(torch.load(model_path))
-    model.eval()
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    trainer = ModelTrainer(model, optimizer, data, hidden_size)
-    snap = trainer.generate_n_examples(n=1, length=_len_, starter_notes=10)
-
-    piano_roll = snap.squeeze(1).detach().cpu().numpy().round()
-    # обрежь до нужной длины
-    piano_roll = piano_roll[:_len_]
-
-    os.makedirs("generated_old", exist_ok=True)
-    midi = piano_roll_to_midi(piano_roll)
-    midi.write("generated/music_sample.mid")
-
-    plt.figure(figsize=(12, 4))
-    plt.imshow(piano_roll.T, aspect='auto', origin='lower', cmap='gray_r')
-    plt.title("Piano Roll (Generated)")
-    plt.savefig("generated/pianoroll.png")
-    plt.close()
-
-    # reference (например, первый элемент из train)
-    reference_roll = torch.stack([x for x in data[0][:_len_] if isinstance(x, torch.Tensor)])
-    reference_roll = reference_roll.to(torch.float32).cpu().numpy()  # [95, 128]
-
-    print("reference_roll.shape before slicing:", reference_roll.shape)
-    print("piano_roll.shape:", piano_roll.shape)
-
-    if reference_roll.ndim == 3 and reference_roll.shape[0] == 1:
-        reference_roll = reference_roll.squeeze(0)
-
-    # обрезка до длины тарегта
-    target_length = piano_roll.shape[0]  # T сгенерированной последовательности
-    reference_roll = reference_roll[:target_length]  # [T, 128]
-    reference_ssm = compute_ssm(reference_roll)
-
-    # Метрики
-    metrics = evaluate_piano_roll(piano_roll, reference_ssm=reference_ssm)
-    ssm = metrics["ssm"]
-
-    plt.figure(figsize=(6, 6))
-    plt.imshow(ssm, origin='lower', cmap='hot')
-    plt.title("SSM (block-aggregated)")
-    plt.colorbar()
-    plt.savefig("generated/ssm_plot.png")
-    plt.close()
-
-    plt.figure(figsize=(6, 6))
-    plt.imshow(reference_ssm, origin='lower', cmap='hot')
-    plt.title("SSM (Reference)")
-    plt.colorbar()
-    plt.savefig("generated/ssm_reference.png")
-    plt.close()
-
-    # Печать метрик
-    print("\n===== STRUCTURE METRICS =====")
-    for k, v in metrics.items():
-        if k == "ssm":
-            continue
-        print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
-
-
-from collections import defaultdict
-import torch
-import numpy as np
-
-from SingLS.config.config import DEVICE, lr, hidden_size
-from SingLS.trainer.train import ModelTrainer
-
-
 def compare_models_avg(
     model_path: str,
     data_path: str,
     _len_: int = 95,
     n: int = 10,
-):
-    """
-    Универсальный evaluator:
-    - MusicGenerator
-    - HierarchicalGenerator
-    """
-
-    # ---------- data ----------
+) -> dict:
+    """Evaluates a saved model checkpoint over n runs, returns averaged metrics."""
     data = torch.load(data_path, weights_only=False)
 
     reference_roll = torch.stack(
@@ -250,38 +143,20 @@ def compare_models_avg(
     if reference_roll.ndim == 3:
         reference_roll = reference_roll.squeeze(0)
     reference_roll = reference_roll[:_len_]
-
-    from inference.compare_models import compute_ssm, evaluate_piano_roll
     reference_ssm = compute_ssm(reference_roll)
 
-    # ---------- model ----------
     model = torch.load(model_path, weights_only=False, map_location=DEVICE)
     model.eval()
-
-    # sanity-check (оставь на время отладки)
-    print(f"[INFO] Loaded model type: {type(model)}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     trainer = ModelTrainer(model, optimizer, data, hidden_size)
 
-    # ---------- inference ----------
     all_metrics = defaultdict(list)
 
     for _ in range(n):
-        snap = trainer.generate_n_examples(
-            n=1,
-            length=_len_,
-            starter_notes=10
-        )
-
-        piano_roll = snap.squeeze(1).detach().cpu().numpy().round()
-        piano_roll = piano_roll[:_len_]
-
-        metrics = evaluate_piano_roll(
-            piano_roll,
-            reference_ssm=reference_ssm
-        )
-
+        snap = trainer.generate_n_examples(n=1, length=_len_, starter_notes=10)
+        piano_roll = snap.squeeze(1).detach().cpu().numpy().round()[:_len_]
+        metrics = evaluate_piano_roll(piano_roll, reference_ssm=reference_ssm)
         for k, v in metrics.items():
             if k != "ssm":
                 all_metrics[k].append(v)
